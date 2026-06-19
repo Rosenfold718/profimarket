@@ -1,0 +1,101 @@
+'use client'
+import { useEffect } from 'react'
+import { useAppStore } from '@/stores/use-app-store'
+import { authFetch } from '@/lib/fetch'
+import { LandingView } from '@/views/landing'
+import { AuthView } from '@/views/auth'
+import { DashboardView } from '@/views/dashboard'
+import { OrdersView } from '@/views/orders'
+import { OrderDetailView } from '@/views/order-detail'
+import { ChatsView } from '@/views/chats'
+import { ProfileView } from '@/views/profile-view'
+import { ProfileEditView } from '@/views/profile-edit'
+import { UsersView } from '@/views/users'
+import { MyOrdersView } from '@/views/my-orders'
+import { MyResponsesView } from '@/views/my-responses'
+import { AppSidebar, AppHeader, MobileSidebar, ToastContainer } from '@/components/app/layout'
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <AppSidebar />
+      <MobileSidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <AppHeader />
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
+      <ToastContainer />
+    </div>
+  )
+}
+
+export default function Page() {
+  const view = useAppStore((s) => s.view)
+  const user = useAppStore((s) => s.user)
+  const isLoadingAuth = useAppStore((s) => s.isLoadingAuth)
+  const setUser = useAppStore((s) => s.setUser)
+  const setIsLoadingAuth = useAppStore((s) => s.setIsLoadingAuth)
+
+  // Check auth on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await authFetch('/api/auth/me')
+        if (res.ok) {
+          const data = await res.json()
+          setUser(data.user, data.token || null)
+          if (useAppStore.getState().view === 'landing') {
+            useAppStore.getState().setView('dashboard')
+          }
+        } else {
+          setUser(null, null)
+        }
+      } catch {
+        setUser(null, null)
+      } finally {
+        setIsLoadingAuth(false)
+      }
+    }
+    checkAuth()
+  }, [])
+
+  // Loading screen
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-primary-foreground animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-20" />
+              <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" className="opacity-80" />
+            </svg>
+          </div>
+          <p className="text-sm text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Public views
+  if (view === 'landing') return <LandingView />
+  if (view === 'auth') return <AuthView />
+
+  // Protected views (require auth)
+  if (!user) return <LandingView />
+
+  const viewMap: Record<string, React.ReactNode> = {
+    dashboard: <DashboardView />,
+    orders: <OrdersView />,
+    'order-detail': <OrderDetailView />,
+    chats: <ChatsView />,
+    'profile-view': <ProfileView />,
+    'profile-edit': <ProfileEditView />,
+    users: <UsersView />,
+    'my-orders': <MyOrdersView />,
+    'my-responses': <MyResponsesView />,
+  }
+
+  return <AppShell>{viewMap[view] || <DashboardView />}</AppShell>
+}
