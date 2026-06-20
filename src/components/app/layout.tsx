@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Briefcase, FileText, MessageSquare, User, Users, Menu, LogOut,
-  PlusCircle, ChevronRight, X, Building2, ClipboardList
+  PlusCircle, ChevronRight, X, Building2, ClipboardList, UserCircle, Shield
 } from 'lucide-react'
 import { type View } from '@/stores/use-app-store'
 
@@ -18,7 +18,9 @@ const navItems: Array<{ view: View; label: string; icon: React.ReactNode; roles?
   { view: 'my-orders', label: 'Мои заказы', icon: <FileText className="w-5 h-5" />, roles: ['CLIENT'] },
   { view: 'my-responses', label: 'Мои отклики', icon: <ClipboardList className="w-5 h-5" />, roles: ['EXECUTOR'] },
   { view: 'users', label: 'Исполнители', icon: <Users className="w-5 h-5" /> },
+  { view: 'clients', label: 'Заказчики', icon: <UserCircle className="w-5 h-5" /> },
   { view: 'profile-edit', label: 'Мой профиль', icon: <User className="w-5 h-5" /> },
+  { view: 'admin', label: 'Админ-панель', icon: <Shield className="w-5 h-5" />, roles: ['ADMIN'] },
 ]
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -48,7 +50,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold truncate">{user?.name}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{user?.role === 'CLIENT' ? 'Заказчик' : 'Исполнитель'}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{user?.role === 'ADMIN' ? 'Администратор' : user?.role === 'CLIENT' ? 'Заказчик' : 'Исполнитель'}</p>
           </div>
         </div>
       </div>
@@ -138,8 +140,10 @@ const breadcrumbMap: Record<string, string[]> = {
   'my-orders': ['Мои заказы'],
   'my-responses': ['Мои отклики'],
   users: ['Исполнители'],
+  clients: ['Заказчики'],
   'profile-edit': ['Мой профиль'],
   'profile-view': ['Профиль'],
+  'admin': ['Админ-панель'],
 }
 
 export function AppHeader() {

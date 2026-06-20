@@ -4,7 +4,7 @@ import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, Send, Loader2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Send, Loader2, Trash2, Paperclip, FileText, Download, X } from 'lucide-react'
 import { motion } from 'framer-motion'
 import {
   AlertDialog,
@@ -23,7 +23,17 @@ interface Msg {
   senderId: string
   read: boolean
   createdAt: string
+  attachmentUrl?: string
+  attachmentName?: string
+  attachmentType?: string
+  attachmentSize?: number
   sender: { name: string; avatar?: string } | null
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
 }
 
 const POLL_INTERVAL = 2000
@@ -37,6 +47,8 @@ export function ConversationView() {
   const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null)
   const [showDeleteChat, setShowDeleteChat] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const wasAtBottomRef = useRef(true)
   const prevCountRef = useRef(0)
@@ -61,12 +73,13 @@ export function ConversationView() {
 
       if (useSince) {
         if (fetchedMsgs.length > 0) {
-          const existingIds = new Set(currentMsgs.map(m => m.id))
+          const existingIds = new Set(messagesRef.current.map(m => m.id))
           const fresh = fetchedMsgs.filter(m => !existingIds.has(m.id))
           if (fresh.length > 0) {
             setMessages(prev => {
               const merged = [...prev, ...fresh]
               merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+              messagesRef.current = merged
               return merged
             })
             if (wasAtBottomRef.current) {
@@ -123,23 +136,61 @@ export function ConversationView() {
     return () => clearInterval(timer)
   }, [selectedConversationId, loading, loadMessages])
 
+  const handleFileSelect = () => {
+    fileInputRef.current?.click()
+  }
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        addToast('Файл слишком большой (макс. 10 МБ)', 'error')
+        e.target.value = ''
+        return
+      }
+      setAttachedFile(file)
+    }
+  }
+
+  const removeFile = () => {
+    setAttachedFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const send = async () => {
-    if (!text.trim() || sending || !selectedConversationId) return
+    if ((!text.trim() && !attachedFile) || sending || !selectedConversationId) return
     setSending(true)
     try {
-      const res = await authFetch(`/api/conversations/${selectedConversationId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: text.trim() }),
-      })
+      let res: Response
+
+      if (attachedFile) {
+        // Send as FormData
+        const formData = new FormData()
+        if (text.trim()) formData.append('content', text.trim())
+        formData.append('file', attachedFile)
+        res = await authFetch(`/api/conversations/${selectedConversationId}/messages`, {
+          method: 'POST',
+          body: formData,
+        })
+      } else {
+        // Send as JSON (text only)
+        res = await authFetch(`/api/conversations/${selectedConversationId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: text.trim() }),
+        })
+      }
+
       const data = await res.json()
       if (res.ok) {
         setMessages(prev => {
           const merged = [...prev, data.message]
           merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          messagesRef.current = merged
           return merged
         })
         setText('')
+        removeFile()
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
       } else {
         addToast(data.error || 'Ошибка отправки', 'error')
@@ -274,7 +325,29 @@ export function ConversationView() {
                       ? 'bg-primary text-primary-foreground rounded-br-md'
                       : 'bg-muted rounded-bl-md'
                   }`}>
-                    {msg.content}
+                    {msg.attachmentUrl && (
+                      <a
+                        href={msg.attachmentUrl}
+                        download={msg.attachmentName}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`flex items-center gap-2.5 p-2.5 rounded-lg mb-2 transition-colors ${
+                          isMine
+                            ? 'bg-primary-foreground/15 hover:bg-primary-foreground/25'
+                            : 'bg-background/60 hover:bg-background/80'
+                        }`}
+                      >
+                        <FileText className="w-5 h-5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{msg.attachmentName}</p>
+                          {msg.attachmentSize != null && (
+                            <p className="text-[11px] opacity-70">{formatFileSize(msg.attachmentSize)}</p>
+                          )}
+                        </div>
+                        <Download className="w-4 h-4 shrink-0 opacity-70" />
+                      </a>
+                    )}
+                    {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                   </div>
                   <p className={`text-[11px] text-muted-foreground mt-0.5 ${isMine ? 'text-right' : ''}`}>
                     {formatTime(msg.createdAt)}
@@ -331,7 +404,42 @@ export function ConversationView() {
 
       {/* Input */}
       <div className="border-t px-4 py-3 shrink-0">
+        {/* File preview */}
+        {attachedFile && (
+          <div className="max-w-4xl mx-auto mb-2">
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm">
+              <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+              <span className="flex-1 truncate">{attachedFile.name}</span>
+              <span className="text-muted-foreground text-xs">{formatFileSize(attachedFile.size)}</span>
+              <button
+                onClick={removeFile}
+                className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors"
+                aria-label="Удалить файл"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex gap-2 max-w-4xl mx-auto">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="*"
+            onChange={onFileChange}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={handleFileSelect}
+            disabled={sending}
+            aria-label="Прикрепить файл"
+          >
+            <Paperclip className="w-4 h-4" />
+          </Button>
           <Input
             placeholder="Введите сообщение..."
             value={text}
@@ -342,7 +450,12 @@ export function ConversationView() {
             className="h-11"
             disabled={sending}
           />
-          <Button onClick={send} disabled={sending || !text.trim()} size="icon" className="h-11 w-11 shrink-0">
+          <Button
+            onClick={send}
+            disabled={sending || (!text.trim() && !attachedFile)}
+            size="icon"
+            className="h-11 w-11 shrink-0"
+          >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
         </div>

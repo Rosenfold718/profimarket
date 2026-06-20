@@ -1,12 +1,12 @@
 import { create } from 'zustand'
 
-export type View = 'landing' | 'auth' | 'dashboard' | 'orders' | 'order-detail' | 'chats' | 'profile-view' | 'profile-edit' | 'users' | 'my-orders' | 'my-responses' | 'create-order' | 'conversation'
+export type View = 'landing' | 'auth' | 'dashboard' | 'orders' | 'order-detail' | 'chats' | 'profile-view' | 'profile-edit' | 'users' | 'clients' | 'my-orders' | 'my-responses' | 'create-order' | 'conversation' | 'admin'
 
 interface User {
   id: string
   email: string
   name: string
-  role: 'CLIENT' | 'EXECUTOR'
+  role: 'CLIENT' | 'EXECUTOR' | 'ADMIN'
   phone?: string
   avatar?: string
   profile?: {

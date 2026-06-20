@@ -26,13 +26,16 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(conversations.updatedAt))
 
     // For each conversation, get the other user and last message
-    const result = await Promise.all(convs.map(async (conv) => {
+    const result = (await Promise.all(convs.map(async (conv) => {
       const peerId = conv.user1Id === userId ? conv.user2Id : conv.user1Id
 
       const [peer, lastMsg] = await Promise.all([
         db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, peerId)).limit(1),
         db.select().from(messages).where(eq(messages.conversationId, conv.id)).orderBy(desc(messages.createdAt)).limit(1),
       ])
+
+      // Skip conversations with no messages
+      if (!lastMsg[0]) return null
 
       const unreadRes = await db.select({ count: sql<number>`count(*)` })
         .from(messages)
@@ -42,15 +45,15 @@ export async function GET(req: NextRequest) {
       return {
         id: conv.id,
         peer: peer[0] || { id: peerId, name: 'Удалённый пользователь' },
-        lastMessage: lastMsg[0] ? {
+        lastMessage: {
           content: lastMsg[0].content,
           createdAt: lastMsg[0].createdAt,
           isMine: lastMsg[0].senderId === userId,
-        } : null,
+        },
         updatedAt: conv.updatedAt,
         unreadCount,
       }
-    }))
+    }))).filter(Boolean)
 
     return NextResponse.json({ conversations: result })
   } catch {

@@ -4,6 +4,16 @@ import { eq, and, ne, desc, sql } from 'drizzle-orm'
 import { getTokenFromHeaders, verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
+import { writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
+import { randomUUID } from 'crypto'
+
+const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads', 'chat-attachments')
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+
+async function ensureUploadDir() {
+  await mkdir(UPLOAD_DIR, { recursive: true })
+}
 
 // GET /api/conversations/[id]/messages
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -35,6 +45,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     senderId: messages.senderId,
     read: messages.read,
     createdAt: messages.createdAt,
+    attachmentUrl: messages.attachmentUrl,
+    attachmentName: messages.attachmentName,
+    attachmentType: messages.attachmentType,
+    attachmentSize: messages.attachmentSize,
     sender: { name: users.name, avatar: users.avatar },
   })
   .from(messages)
@@ -45,7 +59,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ messages: msgs })
 }
 
-// POST /api/conversations/[id]/messages — send message
+// POST /api/conversations/[id]/messages — send message (supports file attachment via multipart/form-data)
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const token = getTokenFromHeaders(req.headers)
   if (!token) return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
@@ -60,19 +74,62 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Не найдено' }, { status: 404 })
   }
 
-  const schema = z.object({ content: z.string().min(1, 'Введите сообщение').max(5000) })
-
   try {
-    const body = await req.json()
-    const { content } = schema.parse(body)
+    const contentType = req.headers.get('content-type') || ''
+
+    let content = ''
+    let attachmentUrl: string | null = null
+    let attachmentName: string | null = null
+    let attachmentType: string | null = null
+    let attachmentSize: number | null = null
+
+    if (contentType.includes('multipart/form-data')) {
+      // Handle multipart/form-data with optional file
+      const formData = await req.formData()
+      const rawContent = formData.get('content')
+      if (typeof rawContent === 'string') content = rawContent.trim()
+
+      const file = formData.get('file') as File | null
+      if (file && file.size > 0) {
+        if (file.size > MAX_FILE_SIZE) {
+          return NextResponse.json({ error: 'Файл слишком большой (макс. 10 МБ)' }, { status: 400 })
+        }
+        await ensureUploadDir()
+        const uuid = randomUUID()
+        const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : ''
+        const savedName = `${uuid}${ext}`
+        const filePath = join(UPLOAD_DIR, savedName)
+
+        const bytes = await file.arrayBuffer()
+        await writeFile(filePath, new Uint8Array(bytes))
+
+        attachmentUrl = `/uploads/chat-attachments/${savedName}`
+        attachmentName = file.name
+        attachmentType = file.type || 'application/octet-stream'
+        attachmentSize = file.size
+      }
+
+      if (!content && !attachmentUrl) {
+        return NextResponse.json({ error: 'Введите сообщение или прикрепите файл' }, { status: 400 })
+      }
+    } else {
+      // Handle JSON body (backward compatible)
+      const schema = z.object({ content: z.string().min(1, 'Введите сообщение').max(5000) })
+      const body = schema.parse(await req.json())
+      content = body.content.trim()
+    }
 
     const now = new Date().toISOString()
     const [msg] = await db.insert(messages).values({
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       conversationId: id,
       senderId: payload.userId,
-      content: content.trim(),
+      content: content || '(файл)',
       read: false,
+      attachmentUrl,
+      attachmentName,
+      attachmentType,
+      attachmentSize,
       createdAt: now,
     }).returning()
 

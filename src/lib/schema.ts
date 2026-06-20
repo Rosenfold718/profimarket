@@ -9,7 +9,7 @@ export const users = sqliteTable('User', {
   passwordHash: text('passwordHash').notNull(),
   name: text('name').notNull(),
   phone: text('phone'),
-  role: text('role', { enum: ['CLIENT', 'EXECUTOR'] }).notNull().default('EXECUTOR'),
+  role: text('role', { enum: ['CLIENT', 'EXECUTOR', 'ADMIN'] }).notNull().default('EXECUTOR'),
   avatar: text('avatar'),
   createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updatedAt').notNull(),
@@ -113,6 +113,10 @@ export const messages = sqliteTable('Message', {
   senderId: text('senderId').notNull(),
   content: text('content').notNull(),
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  attachmentUrl: text('attachmentUrl'),
+  attachmentName: text('attachmentName'),
+  attachmentType: text('attachmentType'),
+  attachmentSize: integer('attachmentSize'),
   createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
 })
 

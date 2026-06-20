@@ -11,10 +11,12 @@ import { ChatsView } from '@/views/chats'
 import { ProfileView } from '@/views/profile-view'
 import { ProfileEditView } from '@/views/profile-edit'
 import { UsersView } from '@/views/users'
+import { ClientsView } from '@/views/clients'
 import { MyOrdersView } from '@/views/my-orders'
 import { MyResponsesView } from '@/views/my-responses'
 import { CreateOrderView } from '@/views/create-order'
 import { ConversationView } from '@/views/conversation'
+import { AdminView } from '@/views/admin'
 import { AppSidebar, AppHeader, MobileSidebar, ToastContainer } from '@/components/app/layout'
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -114,10 +116,12 @@ export default function Page() {
     'profile-view': <ProfileView />,
     'profile-edit': <ProfileEditView />,
     users: <UsersView />,
+    clients: <ClientsView />,
     'my-orders': <MyOrdersView />,
     'my-responses': <MyResponsesView />,
     'create-order': <CreateOrderView />,
     'conversation': <ConversationView />,
+    admin: <AdminView />,
   }
 
   return <AppShell>{viewMap[view] || <DashboardView />}</AppShell>

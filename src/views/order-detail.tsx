@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MapPin, Clock, MessageSquare, ArrowLeft, Send, Star,
-  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig, Trash2
+  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig, Trash2, Paperclip, FileText, Download, X
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -43,7 +43,14 @@ interface Response {
 
 interface Message {
   id: string; content: string; read: boolean; createdAt: string
+  attachmentUrl?: string; attachmentName?: string; attachmentType?: string; attachmentSize?: number
   sender: { id: string; name: string; role: string; avatar?: string }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
 }
 
 const statusColor: Record<string, string> = {
@@ -70,6 +77,8 @@ export function OrderDetailView() {
   const [responseText, setResponseText] = useState('')
   const [responseBudget, setResponseBudget] = useState('')
   const [responding, setResponding] = useState(false)
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const wasAtBottomRef = useRef(true)
   const messagesRef = useRef<Message[]>([])
@@ -111,10 +120,12 @@ export function OrderDetailView() {
         const data = await res.json()
         const newMsgs: Message[] = data.messages || []
         if (newMsgs.length > 0) {
-          const existingIds = new Set(currentMsgs.map(m => m.id))
+          const existingIds = new Set(messagesRef.current.map(m => m.id))
           const fresh = newMsgs.filter(m => !existingIds.has(m.id))
           if (fresh.length > 0) {
-            setMessages(prev => [...prev, ...fresh])
+            const updated = [...messagesRef.current, ...fresh]
+            messagesRef.current = updated
+            setMessages(updated)
             if (wasAtBottomRef.current) {
               setTimeout(() => scrollToBottom(), 50)
             }
@@ -147,23 +158,60 @@ export function OrderDetailView() {
 
   useEffect(() => { loadOrder() }, [loadOrder])
 
+  const handleFileSelect = () => {
+    fileInputRef.current?.click()
+  }
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        addToast('Файл слишком большой (макс. 10 МБ)', 'error')
+        e.target.value = ''
+        return
+      }
+      setAttachedFile(file)
+    }
+  }
+
+  const removeFile = () => {
+    setAttachedFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const sendMessage = async () => {
-    if (!chatInput.trim() || !selectedOrderId) return
+    if ((!chatInput.trim() && !attachedFile) || !selectedOrderId) return
     setSending(true)
     try {
-      const res = await authFetch(`/api/orders/${selectedOrderId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ content: chatInput.trim() }),
-      })
+      let res: Response
+
+      if (attachedFile) {
+        const formData = new FormData()
+        if (chatInput.trim()) formData.append('content', chatInput.trim())
+        formData.append('file', attachedFile)
+        res = await authFetch(`/api/orders/${selectedOrderId}/messages`, {
+          method: 'POST',
+          body: formData,
+        })
+      } else {
+        res = await authFetch(`/api/orders/${selectedOrderId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ content: chatInput.trim() }),
+        })
+      }
+
       if (!res.ok) {
         try { const d = await res.json(); addToast(d.error || 'Ошибка отправки', 'error') }
         catch { addToast('Ошибка отправки', 'error') }
       } else {
         const data = await res.json()
         if (data.message) {
-          setMessages((prev) => [...prev, data.message])
+          const updated = [...messagesRef.current, data.message]
+          messagesRef.current = updated
+          setMessages(updated)
         }
         setChatInput('')
+        removeFile()
       }
     } catch {
       addToast('Ошибка отправки', 'error')
@@ -487,7 +535,29 @@ export function OrderDetailView() {
                                     ? 'bg-primary text-primary-foreground rounded-br-sm'
                                     : 'bg-muted rounded-bl-sm'
                                 }`}>
-                                  {msg.content}
+                                  {msg.attachmentUrl && (
+                                    <a
+                                      href={msg.attachmentUrl}
+                                      download={msg.attachmentName}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`flex items-center gap-2.5 p-2.5 rounded-lg mb-2 transition-colors ${
+                                        isMine
+                                          ? 'bg-primary-foreground/15 hover:bg-primary-foreground/25'
+                                          : 'bg-background/60 hover:bg-background/80'
+                                      }`}
+                                    >
+                                      <FileText className="w-5 h-5 shrink-0" />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium truncate">{msg.attachmentName}</p>
+                                        {msg.attachmentSize != null && (
+                                          <p className="text-[11px] opacity-70">{formatFileSize(msg.attachmentSize)}</p>
+                                        )}
+                                      </div>
+                                      <Download className="w-4 h-4 shrink-0 opacity-70" />
+                                    </a>
+                                  )}
+                                  {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                                 </div>
                                 <p className={`text-[10px] text-muted-foreground mt-1 ${isMine ? 'text-right' : ''}`}>
                                   {new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
@@ -501,7 +571,41 @@ export function OrderDetailView() {
                     </div>
                     {/* Input */}
                     <div className="p-3 border-t border-border">
+                      {attachedFile && (
+                        <div className="mb-2">
+                          <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm">
+                            <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="flex-1 truncate">{attachedFile.name}</span>
+                            <span className="text-muted-foreground text-xs">{formatFileSize(attachedFile.size)}</span>
+                            <button
+                              onClick={removeFile}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors"
+                              aria-label="Удалить файл"
+                            >
+                              <X className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex gap-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="*"
+                          onChange={onFileChange}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={handleFileSelect}
+                          disabled={sending}
+                          aria-label="Прикрепить файл"
+                        >
+                          <Paperclip className="w-4 h-4" />
+                        </Button>
                         <Textarea
                           placeholder="Введите сообщение..."
                           value={chatInput}
@@ -512,7 +616,7 @@ export function OrderDetailView() {
                         />
                         <Button
                           onClick={sendMessage}
-                          disabled={sending || !chatInput.trim()}
+                          disabled={sending || (!chatInput.trim() && !attachedFile)}
                           size="icon"
                           className="shrink-0"
                         >
