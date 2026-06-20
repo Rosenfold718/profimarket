@@ -2,12 +2,14 @@ import { drizzle } from 'drizzle-orm/libsql'
 import { createClient } from '@libsql/client'
 import * as schema from '@/lib/schema'
 
-// Use local SQLite for development, Turso for production (Vercel)
-// Set USE_TURSO=true to force Turso in development
-const useTurso = process.env.USE_TURSO === 'true' || (!process.env.DATABASE_URL && !!process.env.TURSO_URL)
+// Turso cloud database — used when TURSO_URL is set (Vercel production)
+// or when USE_TURSO=true is explicitly set (local dev override)
+const useTurso = !!process.env.TURSO_URL && process.env.TURSO_URL.startsWith('libsql://')
+
 const dbUrl = useTurso
-  ? (process.env.TURSO_URL || 'file:./db/custom.db')
+  ? process.env.TURSO_URL
   : (process.env.DATABASE_URL || 'file:./db/custom.db')
+
 const authToken = useTurso ? process.env.TURSO_AUTH_TOKEN : undefined
 
 const client = createClient({ url: dbUrl, authToken })
