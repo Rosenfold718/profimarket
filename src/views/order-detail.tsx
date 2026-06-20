@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MapPin, Clock, MessageSquare, ArrowLeft, Send, Star,
-  Briefcase, CheckCircle2, XCircle, Loader2
+  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig
 } from 'lucide-react'
 
 interface Order {
@@ -154,6 +154,21 @@ export function OrderDetailView() {
     }
   }
 
+  const completeOrder = async () => {
+    if (!selectedOrderId) return
+    try {
+      const res = await authFetch(`/api/orders/${selectedOrderId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      })
+      if (!res.ok) throw new Error()
+      addToast('Заказ отмечен как выполненный!', 'success')
+      loadOrder()
+    } catch {
+      addToast('Ошибка', 'error')
+    }
+  }
+
   if (loading) return (
     <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-4">
       <Skeleton className="h-8 w-64" />
@@ -194,6 +209,12 @@ export function OrderDetailView() {
                   ? `${(order.budgetFrom || order.budgetTo)!.toLocaleString('ru')} ₽`
                   : 'По договорённости'}
             </p>
+            {isClient && order.status === 'IN_PROGRESS' && (
+              <Button size="sm" onClick={completeOrder} className="mt-2 gap-1.5">
+                <CircleCheckBig className="w-4 h-4" />
+                Завершить заказ
+              </Button>
+            )}
           </div>
         </div>
       </div>

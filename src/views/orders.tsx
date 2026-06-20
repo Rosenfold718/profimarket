@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { motion } from 'framer-motion'
 import {
-  Search, MapPin, MessageSquare, Clock, ChevronLeft, ChevronRight, SlidersHorizontal, Briefcase, AlertTriangle
+  Search, MapPin, MessageSquare, Clock, ChevronLeft, ChevronRight, SlidersHorizontal, Briefcase, AlertTriangle, FolderOpen, Loader, CheckCircle2
 } from 'lucide-react'
 
 interface Category { id: string; name: string; slug: string }
@@ -26,12 +26,19 @@ const statusColor = (s: string) => {
   switch (s) {
     case 'OPEN': return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
     case 'IN_PROGRESS': return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800'
-    case 'COMPLETED': return 'bg-muted text-muted-foreground'
+    case 'COMPLETED': return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800'
+    case 'CANCELLED': return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
     default: return 'bg-muted text-muted-foreground'
   }
 }
 
 const statusLabel: Record<string, string> = { OPEN: 'Открыт', IN_PROGRESS: 'В работе', COMPLETED: 'Выполнен', CANCELLED: 'Отменён' }
+
+const statusTabs = [
+  { key: 'OPEN', label: 'Открытые', icon: <FolderOpen className="w-4 h-4" /> },
+  { key: 'IN_PROGRESS', label: 'В работе', icon: <Loader className="w-4 h-4" /> },
+  { key: 'COMPLETED', label: 'Выполненные', icon: <CheckCircle2 className="w-4 h-4" /> },
+] as const
 
 const formatBudget = (from?: number, to?: number) => {
   if (!from && !to) return 'По договорённости'
@@ -68,11 +75,13 @@ export function OrdersView() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
   const [region, setRegion] = useState('')
+  const [statusTab, setStatusTab] = useState<string>('OPEN')
+  const [counts, setCounts] = useState<Record<string, number>>({})
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '12', search, category, region, status: 'OPEN' })
+      const params = new URLSearchParams({ page: String(page), limit: '12', search, category, region, status: statusTab })
       const res = await fetch(`/api/orders?${params}`)
       const data = await res.json()
       setOrders(data.orders || [])
@@ -82,7 +91,23 @@ export function OrdersView() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, category, region])
+  }, [page, search, category, region, statusTab])
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [openRes, ipRes, compRes] = await Promise.all([
+        fetch('/api/orders?limit=1&status=OPEN'),
+        fetch('/api/orders?limit=1&status=IN_PROGRESS'),
+        fetch('/api/orders?limit=1&status=COMPLETED'),
+      ])
+      const [openD, ipD, compD] = await Promise.all([openRes.json(), ipRes.json(), compRes.json()])
+      setCounts({
+        OPEN: openD.total || 0,
+        IN_PROGRESS: ipD.total || 0,
+        COMPLETED: compD.total || 0,
+      })
+    } catch { /* silent */ }
+  }, [search, category, region])
 
   useEffect(() => {
     fetch('/api/categories').then(r => r.json()).then(d => setCategories(d.categories || []))
@@ -90,9 +115,41 @@ export function OrdersView() {
   }, [])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
+  useEffect(() => { fetchCounts() }, [fetchCounts])
+
+  const handleTabChange = (tab: string) => {
+    setStatusTab(tab)
+    setPage(1)
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-7xl mx-auto">
+      {/* Status tabs */}
+      <div className="flex gap-1 p-1 bg-muted rounded-lg">
+        {statusTabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => handleTabChange(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap flex-1 justify-center ${
+              statusTab === tab.key
+                ? 'bg-background shadow-sm text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tab.icon}
+            <span className="hidden sm:inline">{tab.label}</span>
+            <span className="lg:hidden">{tab.label.slice(0, -2)}</span>
+            {(counts[tab.key] ?? 0) > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                statusTab === tab.key ? 'bg-primary/10 text-primary' : 'bg-background/50'
+              }`}>
+                {counts[tab.key]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Filters */}
       <Card className="border bg-card">
         <CardContent className="p-4">
@@ -145,7 +202,9 @@ export function OrdersView() {
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Briefcase className="w-12 h-12 mx-auto mb-4 opacity-20" />
-          <p className="text-base font-medium">Заказы не найдены</p>
+          <p className="text-base font-medium">
+            {statusTab === 'OPEN' ? 'Открытых заказов нет' : statusTab === 'IN_PROGRESS' ? 'Заказов в работе нет' : 'Выполненных заказов нет'}
+          </p>
           <p className="text-sm mt-1">Попробуйте изменить параметры поиска</p>
         </div>
       ) : (

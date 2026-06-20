@@ -52,23 +52,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const schema = z.object({ content: z.string().min(1, 'Введите сообщение').max(5000) })
-  const body = await req.json()
-  const { content } = schema.parse(body)
 
-  const now = new Date().toISOString()
-  const [msg] = await db.insert(messages).values({
-    id: crypto.randomUUID(),
-    conversationId: id,
-    senderId: payload.userId,
-    content: content.trim(),
-    read: false,
-    createdAt: now,
-  }).returning()
+  try {
+    const body = await req.json()
+    const { content } = schema.parse(body)
 
-  // Update conversation timestamp
-  await db.update(conversations).set({ updatedAt: now }).where(eq(conversations.id, id))
+    const now = new Date().toISOString()
+    const [msg] = await db.insert(messages).values({
+      id: crypto.randomUUID(),
+      conversationId: id,
+      senderId: payload.userId,
+      content: content.trim(),
+      read: false,
+      createdAt: now,
+    }).returning()
 
-  return NextResponse.json({ message: msg }, { status: 201 })
+    // Update conversation timestamp
+    await db.update(conversations).set({ updatedAt: now }).where(eq(conversations.id, id))
+
+    return NextResponse.json({ message: msg }, { status: 201 })
+  } catch (e: unknown) {
+    if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
+    console.error('Conversation message insert error:', e)
+    return NextResponse.json({ error: 'Ошибка отправки сообщения' }, { status: 500 })
+  }
 }
 
 // PATCH /api/conversations/[id]/messages — mark messages as read

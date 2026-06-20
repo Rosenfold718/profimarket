@@ -49,6 +49,7 @@ export async function POST(
       orderId: id,
       senderId: payload.userId,
       content: body.content,
+      read: false,
       createdAt: new Date().toISOString(),
     }).returning()
 
@@ -61,6 +62,7 @@ export async function POST(
     return NextResponse.json({ message: messageWithSender }, { status: 201 })
   } catch (e: unknown) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
+    console.error('Order message insert error:', e)
     return NextResponse.json({ error: 'Ошибка отправки' }, { status: 500 })
   }
 }

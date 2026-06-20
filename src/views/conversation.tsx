@@ -60,9 +60,11 @@ export function ConversationView() {
       if (res.ok) {
         setMessages(prev => [data.message, ...prev])
         setText('')
+      } else {
+        addToast(data.error || 'Ошибка отправки', 'error')
       }
     } catch {
-      addToast('Ошибка отправки', 'error')
+      addToast('Ошибка сети', 'error')
     } finally {
       setSending(false)
     }

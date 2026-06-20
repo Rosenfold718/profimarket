@@ -27,7 +27,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-5 py-3 border-b border-border">
+      <div className="h-14 px-5 flex items-center border-b border-border shrink-0">
         <button onClick={() => { setView('dashboard'); onNavigate?.() }} className="flex items-center gap-3 hover:opacity-70 transition-opacity">
           <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
             <Building2 className="w-5 h-5 text-primary-foreground" />
@@ -150,8 +150,8 @@ export function AppHeader() {
   const breadcrumbs = breadcrumbMap[view] || []
 
   return (
-    <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-md border-b border-border">
-      <div className="flex items-center h-14 px-4 lg:px-6 gap-3">
+    <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-md">
+      <div className="flex items-center h-14 px-4 lg:px-6 gap-3 border-b border-border">
         <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-lg hover:bg-muted transition-colors">
           <Menu className="w-5 h-5" />
         </button>
