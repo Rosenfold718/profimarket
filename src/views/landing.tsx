@@ -65,7 +65,7 @@ export function LandingView() {
             </Button>
           ) : (
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setView('auth')}>
+              <Button variant="ghost" size="sm" onClick={() => { setAuthMode('login'); setView('auth') }}>
                 Войти
               </Button>
               <Button size="sm" onClick={() => { setAuthMode('register'); setView('auth') }}>
@@ -98,11 +98,11 @@ export function LandingView() {
                 проектировщиков и кадастровых инженеров. Для судов, организаций и бизнеса.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="lg" onClick={() => setView('auth')} className="h-11 px-6">
+                <Button size="lg" onClick={() => { setAuthMode('register'); setView('auth') }} className="h-11 px-6">
                   Начать работу
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
-                <Button size="lg" variant="outline" onClick={() => user ? setView('orders') : setView('auth')} className="h-11 px-6">
+                <Button size="lg" variant="outline" onClick={() => { setAuthMode('login'); setView('auth') }} className="h-11 px-6">
                   Смотреть заказы
                 </Button>
               </div>

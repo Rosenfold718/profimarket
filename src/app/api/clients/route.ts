@@ -1,27 +1,21 @@
 import { db } from '@/lib/db'
 import { users, profiles, orders } from '@/lib/schema'
-import { eq, and, desc, count, like, isNotNull } from 'drizzle-orm'
+import { eq, and, desc, count, like } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
-// GET /api/clients — search clients (users with role='CLIENT' and profiles)
+// GET /api/clients — search clients (users with role='CLIENT')
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const search = url.searchParams.get('search') || undefined
-  const region = url.searchParams.get('region') || undefined
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')))
 
-  // Build conditions — always filter by CLIENT role and ensure profile exists
-  const conditions: any[] = [
-    eq(users.role, 'CLIENT'),
-    isNotNull(profiles.id),
-  ]
+  const conditions: any[] = [eq(users.role, 'CLIENT')]
   if (search) conditions.push(like(users.name, `%${search}%`))
-  if (region) conditions.push(eq(profiles.region, region))
 
   const skip = (page - 1) * limit
 
-  // Query clients with profiles
+  // Query clients — left join profiles (clients may not have profiles)
   const clientsList = await db
     .select({
       id: users.id,
@@ -30,23 +24,14 @@ export async function GET(req: NextRequest) {
       avatar: users.avatar,
       createdAt: users.createdAt,
       profileId: profiles.id,
-      profileUserId: profiles.userId,
       profileCompany: profiles.company,
       profilePosition: profiles.position,
-      profileExperienceYears: profiles.experienceYears,
-      profileSpecializations: profiles.specializations,
-      profileDescription: profiles.description,
-      profileRegion: profiles.region,
       profileCity: profiles.city,
-      profileEducation: profiles.education,
-      profileCertificates: profiles.certificates,
-      profileRating: profiles.rating,
-      profileCompletedOrders: profiles.completedOrders,
-      profileWebsite: profiles.website,
-      profileSocialLinks: profiles.socialLinks,
+      profileRegion: profiles.region,
+      profileDescription: profiles.description,
     })
     .from(users)
-    .innerJoin(profiles, eq(users.id, profiles.userId))
+    .leftJoin(profiles, eq(users.id, profiles.userId))
     .where(and(...conditions))
     .orderBy(desc(users.createdAt))
     .limit(limit)
@@ -58,13 +43,13 @@ export async function GET(req: NextRequest) {
 
   if (clientIds.length > 0) {
     const countResults = await db
-      .select({ clientId: orders.clientId, count: count() })
+      .select({ clientId: orders.clientId, cnt: count() })
       .from(orders)
       .groupBy(orders.clientId)
 
     for (const r of countResults) {
       if (clientIds.includes(r.clientId)) {
-        orderCounts[r.clientId] = r.count
+        orderCounts[r.clientId] = r.cnt
       }
     }
   }
@@ -75,23 +60,14 @@ export async function GET(req: NextRequest) {
     role: u.role,
     avatar: u.avatar,
     createdAt: u.createdAt,
-    profile: {
+    profile: u.profileId ? {
       id: u.profileId,
-      userId: u.profileUserId,
       company: u.profileCompany,
       position: u.profilePosition,
-      experienceYears: u.profileExperienceYears,
-      specializations: u.profileSpecializations,
-      description: u.profileDescription,
-      region: u.profileRegion,
       city: u.profileCity,
-      education: u.profileEducation,
-      certificates: u.profileCertificates,
-      rating: u.profileRating,
-      completedOrders: u.profileCompletedOrders,
-      website: u.profileWebsite,
-      socialLinks: u.profileSocialLinks,
-    },
+      region: u.profileRegion,
+      description: u.profileDescription,
+    } : null,
     _count: { orders: orderCounts[u.id] || 0 },
   }))
 
@@ -99,7 +75,6 @@ export async function GET(req: NextRequest) {
   const totalResult = await db
     .select({ total: count() })
     .from(users)
-    .innerJoin(profiles, eq(users.id, profiles.userId))
     .where(and(...conditions))
 
   const total = totalResult[0]?.total || 0
