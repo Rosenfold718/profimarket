@@ -114,9 +114,9 @@ function OnlineDot({ lastSeenAt }: { lastSeenAt?: string }) {
 // ─── Read receipt checkmarks ──────────────────────────────────────────────────
 function ReadCheck({ read }: { read: boolean }) {
   if (read) {
-    return <CheckCheck className="w-3.5 h-3.5 text-primary-foreground/70" />
+    return <CheckCheck className="w-3.5 h-3.5 text-sky-500" />
   }
-  return <Check className="w-3.5 h-3.5 text-primary-foreground/50" />
+  return <Check className="w-3.5 h-3.5 text-muted-foreground/70" />
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
