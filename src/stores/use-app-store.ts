@@ -31,6 +31,8 @@ interface AppState {
   // Navigation
   view: View
   setView: (v: View) => void
+  authMode: 'login' | 'register'
+  setAuthMode: (m: 'login' | 'register') => void
   navigateToOrder: (id: string, tab?: string) => void
   selectedOrderId: string | null
   selectedOrderTab: string
@@ -60,6 +62,8 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   view: 'landing',
   setView: (v) => set({ view: v }),
+  authMode: 'login' as const,
+  setAuthMode: (m) => set({ authMode: m }),
   navigateToOrder: (id, tab) => set({ selectedOrderId: id, selectedOrderTab: tab || 'info', view: 'order-detail' }),
   selectedOrderId: null,
   selectedOrderTab: 'info',

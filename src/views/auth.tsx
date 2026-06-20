@@ -9,8 +9,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Building2, ArrowLeft, User, Building, Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export function AuthView() {
-  const { setView, setUser, addToast } = useAppStore()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const { setView, setUser, addToast, authMode, setAuthMode } = useAppStore()
+  const [mode, setMode] = useState<'login' | 'register'>(authMode)
   const [role, setRole] = useState<'CLIENT' | 'EXECUTOR'>('EXECUTOR')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -192,7 +192,7 @@ export function AuthView() {
 
               <div className="text-center">
                 <button
-                  onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}
+                  onClick={() => { const next = mode === 'login' ? 'register' : 'login'; setMode(next); setAuthMode(next); setError('') }}
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {mode === 'login' ? (

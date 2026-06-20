@@ -70,11 +70,12 @@ export function OrderDetailView() {
     if (!selectedOrderId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/orders/${selectedOrderId}`)
-      const data = await res.json()
-      setOrder(data.order)
-      // Load messages
-      const msgRes = await authFetch(`/api/orders/${selectedOrderId}/messages`)
+      const [orderRes, msgRes] = await Promise.all([
+        fetch(`/api/orders/${selectedOrderId}`),
+        authFetch(`/api/orders/${selectedOrderId}/messages`),
+      ])
+      const orderData = await orderRes.json()
+      setOrder(orderData.order)
       const msgData = await msgRes.json()
       setMessages(msgData.messages || [])
     } catch {
@@ -94,11 +95,16 @@ export function OrderDetailView() {
         method: 'POST',
         body: JSON.stringify({ content: chatInput.trim() }),
       })
-      const data = await res.json()
-      if (data.message) {
-        setMessages((prev) => [...prev, data.message])
+      if (!res.ok) {
+        try { const d = await res.json(); addToast(d.error || 'Ошибка отправки', 'error') }
+        catch { addToast('Ошибка отправки', 'error') }
+      } else {
+        const data = await res.json()
+        if (data.message) {
+          setMessages((prev) => [...prev, data.message])
+        }
+        setChatInput('')
       }
-      setChatInput('')
     } catch {
       addToast('Ошибка отправки', 'error')
     } finally {

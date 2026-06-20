@@ -43,7 +43,7 @@ const fadeIn = {
 }
 
 export function LandingView() {
-  const { setView, user } = useAppStore()
+  const { setView, user, setAuthMode } = useAppStore()
   const mounted = useSyncExternalStore(() => () => {}, () => true, () => false)
 
   return (
@@ -68,7 +68,7 @@ export function LandingView() {
               <Button variant="ghost" size="sm" onClick={() => setView('auth')}>
                 Войти
               </Button>
-              <Button size="sm" onClick={() => setView('auth')}>
+              <Button size="sm" onClick={() => { setAuthMode('register'); setView('auth') }}>
                 Регистрация
               </Button>
             </div>
@@ -191,7 +191,7 @@ export function LandingView() {
                 Регистрация бесплатна.
               </p>
               <div className="mt-8">
-                <Button size="lg" onClick={() => setView('auth')} className="h-11 px-8">
+                <Button size="lg" onClick={() => { setAuthMode('register'); setView('auth') }} className="h-11 px-8">
                   Создать аккаунт
                   <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>

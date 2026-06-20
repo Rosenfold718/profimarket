@@ -37,7 +37,7 @@ export function CreateOrderView() {
   useEffect(() => {
     fetch('/api/categories')
       .then(r => r.json())
-      .then(data => setCategories(Array.isArray(data) ? data : []))
+      .then(data => setCategories(data.categories || []))
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])

@@ -27,7 +27,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-border">
+      <div className="px-5 py-3 border-b border-border">
         <button onClick={() => { setView('dashboard'); onNavigate?.() }} className="flex items-center gap-3 hover:opacity-70 transition-opacity">
           <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
             <Building2 className="w-5 h-5 text-primary-foreground" />

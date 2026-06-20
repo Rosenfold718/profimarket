@@ -61,6 +61,7 @@ export function OrdersView() {
   const { navigateToOrder, addToast } = useAppStore()
   const [orders, setOrders] = useState<Order[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [regions, setRegions] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -85,6 +86,7 @@ export function OrdersView() {
 
   useEffect(() => {
     fetch('/api/categories').then(r => r.json()).then(d => setCategories(d.categories || []))
+    fetch('/api/orders/regions').then(r => r.json()).then(d => setRegions(d.regions || []))
   }, [])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
@@ -114,11 +116,9 @@ export function OrdersView() {
               <SelectTrigger><SelectValue placeholder="Регион" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Все регионы</SelectItem>
-                <SelectItem value="Москва">Москва</SelectItem>
-                <SelectItem value="Санкт-Петербург">Санкт-Петербург</SelectItem>
-                <SelectItem value="Московская область">Московская область</SelectItem>
-                <SelectItem value="Краснодарский край">Краснодарский край</SelectItem>
-                <SelectItem value="Республика Татарстан">Республика Татарстан</SelectItem>
+                {regions.map(r => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" onClick={() => { setSearch(''); setCategory(''); setRegion(''); setPage(1) }}>

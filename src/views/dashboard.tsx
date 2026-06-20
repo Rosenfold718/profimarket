@@ -55,7 +55,7 @@ export function DashboardView() {
       try {
         const [ordersRes, usersRes, chatsRes] = await Promise.all([
           fetch('/api/orders?limit=6'),
-          fetch('/api/users?limit=1'),
+          fetch('/api/users?limit=1&role=EXECUTOR'),
           authFetch('/api/chats'),
         ])
         const ordersData = await ordersRes.json()

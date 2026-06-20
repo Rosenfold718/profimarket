@@ -17,7 +17,7 @@ export function MyResponsesView() {
 
   useEffect(() => {
     if (!user) return
-    fetch('/api/orders?limit=50&status=OPEN,IN_PROGRESS')
+    fetch('/api/orders?limit=50&status=OPEN,IN_PROGRESS,COMPLETED&includeResponses=true')
       .then(r => r.json())
       .then(d => {
         const myResponses: typeof responses = []

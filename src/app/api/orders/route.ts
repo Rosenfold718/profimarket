@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   const category = url.searchParams.get('category') || undefined
   const region = url.searchParams.get('region') || undefined
   const search = url.searchParams.get('search') || undefined
+  const includeResponses = url.searchParams.get('includeResponses') === 'true'
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')))
 
@@ -108,6 +109,51 @@ export async function GET(req: NextRequest) {
       messages: messageCounts[o.id] || 0,
     },
   }))
+
+  // Optionally include full response data with executor info
+  if (includeResponses && orderIds.length > 0) {
+    const responsesData = await db
+      .select({
+        id: responses.id,
+        orderId: responses.orderId,
+        executorId: responses.executorId,
+        message: responses.message,
+        proposedBudget: responses.proposedBudget,
+        proposedDeadline: responses.proposedDeadline,
+        status: responses.status,
+        createdAt: responses.createdAt,
+        executorId2: users.id,
+        executorName: users.name,
+        executorRole: users.role,
+      })
+      .from(responses)
+      .leftJoin(users, eq(responses.executorId, users.id))
+      .where(inArray(responses.orderId, orderIds))
+
+    const responsesByOrder: Record<string, Array<Record<string, unknown>>> = {}
+    for (const r of responsesData) {
+      if (!responsesByOrder[r.orderId]) responsesByOrder[r.orderId] = []
+      responsesByOrder[r.orderId].push({
+        id: r.id,
+        orderId: r.orderId,
+        executorId: r.executorId,
+        message: r.message,
+        proposedBudget: r.proposedBudget,
+        proposedDeadline: r.proposedDeadline,
+        status: r.status,
+        createdAt: r.createdAt,
+        executor: {
+          id: r.executorId2 || r.executorId,
+          name: r.executorName,
+          role: r.executorRole,
+        },
+      })
+    }
+
+    for (const o of ordersWithCounts) {
+      (o as Record<string, unknown>).responses = responsesByOrder[o.id] || []
+    }
+  }
 
   // Get total count
   const totalResult = category

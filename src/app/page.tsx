@@ -40,6 +40,25 @@ export default function Page() {
   const setUser = useAppStore((s) => s.setUser)
   const setIsLoadingAuth = useAppStore((s) => s.setIsLoadingAuth)
 
+  // Handle browser back/forward
+  useEffect(() => {
+    const handler = () => {
+      const state = window.history.state
+      if (state?.view) {
+        useAppStore.getState().setView(state.view)
+      }
+    }
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [])
+
+  // Push browser history on view change (skip initial load)
+  useEffect(() => {
+    if (view !== 'landing') {
+      window.history.pushState({ view }, '')
+    }
+  }, [view])
+
   // Check auth on mount
   useEffect(() => {
     const checkAuth = async () => {
