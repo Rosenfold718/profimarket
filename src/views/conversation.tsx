@@ -38,7 +38,7 @@ export function ConversationView() {
       let url = `/api/conversations/${selectedConversationId}/messages`
       const currentMsgs = messagesRef.current
       if (useSince && currentMsgs.length > 0) {
-        const newestTime = currentMsgs[0]?.createdAt
+        const newestTime = currentMsgs[currentMsgs.length - 1]?.createdAt
         if (newestTime) url += `?since=${encodeURIComponent(newestTime)}`
       }
 
@@ -52,8 +52,8 @@ export function ConversationView() {
           const fresh = fetchedMsgs.filter(m => !existingIds.has(m.id))
           if (fresh.length > 0) {
             setMessages(prev => {
-              const merged = [...fresh, ...prev]
-              merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              const merged = [...prev, ...fresh]
+              merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
               return merged
             })
             if (wasAtBottomRef.current) {
@@ -62,7 +62,7 @@ export function ConversationView() {
           }
         }
       } else {
-        setMessages(fetchedMsgs)
+        setMessages(fetchedMsgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
         authFetch(`/api/conversations/${selectedConversationId}/messages`, { method: 'PATCH' })
       }
     } catch {
@@ -122,8 +122,8 @@ export function ConversationView() {
       const data = await res.json()
       if (res.ok) {
         setMessages(prev => {
-          const merged = [data.message, ...prev]
-          merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          const merged = [...prev, data.message]
+          merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           return merged
         })
         setText('')
