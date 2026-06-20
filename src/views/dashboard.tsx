@@ -139,7 +139,7 @@ export function DashboardView() {
           </p>
         </div>
         {user?.role === 'CLIENT' && (
-          <Button className="gap-2 h-10">
+          <Button className="gap-2 h-10" onClick={() => setView('create-order')}>
             <PlusCircle className="w-4 h-4" />
             Создать заказ
           </Button>
@@ -279,7 +279,7 @@ export function DashboardView() {
                   </>
                 ) : (
                   <>
-                    <Button variant="ghost" className="w-full justify-start gap-3">
+                    <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setView('create-order')}>
                       <PlusCircle className="w-4 h-4" />Создать заказ
                     </Button>
                     <Button variant="ghost" className="w-full justify-start gap-3" onClick={() => setView('my-orders')}>

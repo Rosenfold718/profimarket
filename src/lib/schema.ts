@@ -21,6 +21,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   executorOrders: many(orders, { relationName: 'executorOrders' }),
   responses: many(responses, { relationName: 'executorResponses' }),
   sentMessages: many(messages, { relationName: 'senderMessages' }),
+  conversations1: many(conversations, { relationName: 'convUser1' }),
+  conversations2: many(conversations, { relationName: 'convUser2' }),
 }))
 
 // ─── Profile ────────────────────────────────────────────────────────────────
@@ -106,7 +108,8 @@ export const responsesRelations = relations(responses, ({ one }) => ({
 // ─── Message ────────────────────────────────────────────────────────────────
 export const messages = sqliteTable('Message', {
   id: text('id').primaryKey(),
-  orderId: text('orderId').notNull(),
+  orderId: text('orderId'),
+  conversationId: text('conversationId'),
   senderId: text('senderId').notNull(),
   content: text('content').notNull(),
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
@@ -115,5 +118,21 @@ export const messages = sqliteTable('Message', {
 
 export const messagesRelations = relations(messages, ({ one }) => ({
   order: one(orders, { fields: [messages.orderId], references: [orders.id] }),
+  conversation: one(conversations, { fields: [messages.conversationId], references: [conversations.id] }),
   sender: one(users, { fields: [messages.senderId], references: [users.id], relationName: 'senderMessages' }),
+}))
+
+// ─── Conversation (direct messages between users) ───────────────────────────
+export const conversations = sqliteTable('Conversation', {
+  id: text('id').primaryKey(),
+  user1Id: text('user1Id').notNull(),
+  user2Id: text('user2Id').notNull(),
+  createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updatedAt').notNull(),
+})
+
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  user1: one(users, { fields: [conversations.user1Id], references: [users.id], relationName: 'convUser1' }),
+  user2: one(users, { fields: [conversations.user2Id], references: [users.id], relationName: 'convUser2' }),
+  messages: many(messages),
 }))

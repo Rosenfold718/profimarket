@@ -89,7 +89,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-3 py-4 space-y-2">
         {user?.role === 'CLIENT' && (
           <Button
-            onClick={() => { setView('dashboard'); setSidebarOpen(false); onNavigate?.() }}
+            onClick={() => { setView('create-order'); setSidebarOpen(false); onNavigate?.() }}
             className="w-full justify-start gap-2.5"
             size="sm"
           >

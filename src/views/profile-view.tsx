@@ -10,6 +10,7 @@ import {
   Star, MapPin, Briefcase, Clock, Building, GraduationCap, Award,
   Globe, ArrowLeft, ExternalLink, CheckCircle2, MessageSquare
 } from 'lucide-react'
+import { authFetch } from '@/lib/fetch'
 
 interface ProfileData {
   id: string; name: string; email: string; role: string; phone?: string
@@ -24,9 +25,32 @@ interface ProfileData {
 }
 
 export function ProfileView() {
-  const { selectedProfileId, setView, user, navigateToOrder, addToast } = useAppStore()
+  const { selectedProfileId, setView, user, navigateToOrder, addToast, navigateToConversation } = useAppStore()
   const [profileData, setProfileData] = useState<ProfileData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [writingConv, setWritingConv] = useState(false)
+
+  const handleWrite = async () => {
+    if (!user || !profileData) return
+    setWritingConv(true)
+    try {
+      const res = await authFetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ peerId: profileData.id }),
+      })
+      const data = await res.json()
+      if (res.ok && data.conversation?.id) {
+        navigateToConversation(data.conversation.id)
+      } else {
+        addToast(data.error || 'Ошибка', 'error')
+      }
+    } catch {
+      addToast('Ошибка соединения', 'error')
+    } finally {
+      setWritingConv(false)
+    }
+  }
 
   useEffect(() => {
     if (!selectedProfileId) return
@@ -211,8 +235,8 @@ export function ProfileView() {
         {/* Actions */}
         {user && user.id !== profileData.id && (
           <div className="mt-6 flex gap-3">
-            <Button variant="outline" className="gap-2" onClick={() => addToast('Функция будет доступна скоро', 'info')}>
-              <MessageSquare className="w-4 h-4" />
+            <Button variant="outline" className="gap-2" onClick={handleWrite} disabled={writingConv}>
+              {writingConv ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" /> : <MessageSquare className="w-4 h-4" />}
               Написать
             </Button>
           </div>

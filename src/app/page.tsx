@@ -13,6 +13,8 @@ import { ProfileEditView } from '@/views/profile-edit'
 import { UsersView } from '@/views/users'
 import { MyOrdersView } from '@/views/my-orders'
 import { MyResponsesView } from '@/views/my-responses'
+import { CreateOrderView } from '@/views/create-order'
+import { ConversationView } from '@/views/conversation'
 import { AppSidebar, AppHeader, MobileSidebar, ToastContainer } from '@/components/app/layout'
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -95,6 +97,8 @@ export default function Page() {
     users: <UsersView />,
     'my-orders': <MyOrdersView />,
     'my-responses': <MyResponsesView />,
+    'create-order': <CreateOrderView />,
+    'conversation': <ConversationView />,
   }
 
   return <AppShell>{viewMap[view] || <DashboardView />}</AppShell>

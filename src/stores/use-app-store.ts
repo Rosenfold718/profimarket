@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type View = 'landing' | 'auth' | 'dashboard' | 'orders' | 'order-detail' | 'chats' | 'profile-view' | 'profile-edit' | 'users' | 'my-orders' | 'my-responses'
+export type View = 'landing' | 'auth' | 'dashboard' | 'orders' | 'order-detail' | 'chats' | 'profile-view' | 'profile-edit' | 'users' | 'my-orders' | 'my-responses' | 'create-order' | 'conversation'
 
 interface User {
   id: string
@@ -36,6 +36,8 @@ interface AppState {
   selectedOrderTab: string
   navigateToProfile: (id: string) => void
   selectedProfileId: string | null
+  navigateToConversation: (id: string) => void
+  selectedConversationId: string | null
 
   // Auth
   user: User | null
@@ -63,6 +65,8 @@ export const useAppStore = create<AppState>((set) => ({
   selectedOrderTab: 'info',
   navigateToProfile: (id) => set({ selectedProfileId: id, view: 'profile-view' }),
   selectedProfileId: null,
+  navigateToConversation: (id) => set({ selectedConversationId: id, view: 'conversation' }),
+  selectedConversationId: null,
 
   user: null,
   token: typeof localStorage !== 'undefined' ? localStorage.getItem('pm_token') : null,
