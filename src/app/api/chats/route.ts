@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { orders, messages, users, categories } from '@/lib/schema'
-import { eq, and, or, desc } from 'drizzle-orm'
+import { orders, messages, users, categories, conversations } from '@/lib/schema'
+import { eq, and, or, desc, ne, sql } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -18,73 +18,142 @@ export async function GET(req: NextRequest) {
 
   const userId = payload.userId
 
-  // Fetch all orders where user is client, executor, or has sent a message,
-  // and that have at least one message.
-  // We fetch orders with messages ordered desc, then compute lastMessage,
-  // totalMessages, unreadCount in-memory.
-  const allOrders = await db.query.orders.findMany({
-    where: or(
-      eq(orders.clientId, userId),
-      eq(orders.executorId, userId),
-    ),
-    with: {
-      category: { columns: { name: true } },
-      client: { columns: { id: true, name: true, avatar: true } },
-      executor: { columns: { id: true, name: true, avatar: true } },
-      messages: {
-        orderBy: (messages, { desc }) => [desc(messages.createdAt)],
-        with: {
-          sender: { columns: { name: true, avatar: true } },
+  try {
+    // ─── 1. Order chats (orders where user is client/executor and has messages) ───
+    const userOrders = await db.select({
+      id: orders.id,
+      title: orders.title,
+      status: orders.status,
+      city: orders.city,
+      clientId: orders.clientId,
+      executorId: orders.executorId,
+      categoryId: orders.categoryId,
+      updatedAt: orders.updatedAt,
+    })
+    .from(orders)
+    .where(or(eq(orders.clientId, userId), eq(orders.executorId, userId)))
+
+    const orderChats = []
+    for (const order of userOrders) {
+      // Get last message for this order
+      const lastMsgs = await db.select({
+        id: messages.id,
+        content: messages.content,
+        senderId: messages.senderId,
+        createdAt: messages.createdAt,
+        senderName: users.name,
+        senderAvatar: users.avatar,
+      })
+      .from(messages)
+      .leftJoin(users, eq(messages.senderId, users.id))
+      .where(eq(messages.orderId, order.id))
+      .orderBy(desc(messages.createdAt))
+      .limit(1)
+
+      if (!lastMsgs.length) continue
+
+      const lastMsg = lastMsgs[0]
+
+      // Count total and unread messages
+      const [counts] = await db.select({
+        total: sql<number>`count(*)`,
+        unread: sql<number>`sum(CASE WHEN ${messages.read} = 0 AND ${messages.senderId} != ${userId} THEN 1 ELSE 0 END)`,
+      })
+      .from(messages)
+      .where(eq(messages.orderId, order.id))
+
+      // Determine interlocutor
+      const isClient = order.clientId === userId
+      const interlocutorId = isClient ? order.executorId : order.clientId
+
+      let interlocutor = { id: interlocutorId || '', name: 'Неизвестен', avatar: undefined as string | undefined, lastSeenAt: undefined as string | undefined }
+      if (interlocutorId) {
+        const [peer] = await db.select({ id: users.id, name: users.name, avatar: users.avatar, lastSeenAt: users.lastSeenAt })
+          .from(users).where(eq(users.id, interlocutorId)).limit(1)
+        if (peer) interlocutor = { id: peer.id, name: peer.name, avatar: peer.avatar ?? undefined, lastSeenAt: peer.lastSeenAt ?? undefined }
+      }
+
+      // Get category name
+      let categoryName: string | null = null
+      if (order.categoryId) {
+        const [cat] = await db.select({ name: categories.name }).from(categories).where(eq(categories.id, order.categoryId)).limit(1)
+        categoryName = cat?.name ?? null
+      }
+
+      orderChats.push({
+        type: 'order',
+        orderId: order.id,
+        title: order.title,
+        status: order.status,
+        city: order.city,
+        categoryName,
+        interlocutor,
+        lastMessage: {
+          content: lastMsg.content,
+          createdAt: lastMsg.createdAt,
+          senderName: lastMsg.senderName,
+          isMine: lastMsg.senderId === userId,
+          read: true, // not used for display logic
         },
-      },
-    },
-    orderBy: (orders, { desc }) => [desc(orders.updatedAt)],
-  })
-
-  // Filter orders that have messages
-  const ordersWithMessages = allOrders.filter(o => o.messages.length > 0)
-
-  const chats = ordersWithMessages.map((order) => {
-    const msgs = order.messages
-    const lastMessage = msgs[0] || null
-    const totalMessages = msgs.length
-    const unreadCount = msgs.filter(
-      (m) => !m.read && m.senderId !== userId,
-    ).length
-
-    const isClient = order.clientId === userId
-    const isExecutor = order.executorId === userId
-    let interlocutor = isClient ? order.executor : isExecutor ? order.client : null
-    if (!interlocutor && lastMessage) {
-      interlocutor = lastMessage.senderId === userId
-        ? (isClient ? order.executor : order.client)
-        : { id: lastMessage.senderId, name: lastMessage.sender.name }
+        totalMessages: Number(counts.total),
+        unreadCount: Number(counts.unread),
+      })
     }
-    if (!interlocutor) interlocutor = order.client
 
-    return {
-      orderId: order.id,
-      title: order.title,
-      status: order.status,
-      city: order.city,
-      categoryName: order.category?.name ?? null,
-      interlocutor: interlocutor
-        ? { id: interlocutor.id, name: interlocutor.name, avatar: ('avatar' in interlocutor ? (interlocutor as { avatar?: string }).avatar : undefined) }
-        : null,
-      lastMessage: lastMessage
-        ? {
-            content: lastMessage.content,
-            createdAt: lastMessage.createdAt,
-            senderName: lastMessage.sender.name,
-            senderAvatar: lastMessage.sender.avatar,
-            isMine: lastMessage.senderId === userId,
-            read: lastMessage.read,
-          }
-        : null,
-      totalMessages,
-      unreadCount,
+    // ─── 2. Direct conversations ───
+    const convs = await db.select({
+      id: conversations.id,
+      user1Id: conversations.user1Id,
+      user2Id: conversations.user2Id,
+      updatedAt: conversations.updatedAt,
+    })
+    .from(conversations)
+    .where(or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId)))
+    .orderBy(desc(conversations.updatedAt))
+
+    const directChats = []
+    for (const conv of convs) {
+      const peerId = conv.user1Id === userId ? conv.user2Id : conv.user1Id
+
+      const [peer, lastMsg] = await Promise.all([
+        db.select({ id: users.id, name: users.name, avatar: users.avatar, lastSeenAt: users.lastSeenAt }).from(users).where(eq(users.id, peerId)).limit(1),
+        db.select({
+          content: messages.content,
+          createdAt: messages.createdAt,
+          senderId: messages.senderId,
+        }).from(messages).where(eq(messages.conversationId, conv.id)).orderBy(desc(messages.createdAt)).limit(1),
+      ])
+
+      if (!lastMsg[0]) continue
+
+      const [unreadRes] = await db.select({ count: sql<number>`count(*)` })
+        .from(messages)
+        .where(and(eq(messages.conversationId, conv.id), ne(messages.senderId, userId), eq(messages.read, false)))
+
+      directChats.push({
+        type: 'direct',
+        id: conv.id,
+        peer: peer[0] ? { ...peer[0], lastSeenAt: peer[0].lastSeenAt ?? undefined } : { id: peerId, name: 'Удалённый пользователь', avatar: undefined, lastSeenAt: undefined },
+        lastMessage: {
+          content: lastMsg[0].content,
+          createdAt: lastMsg[0].createdAt,
+          isMine: lastMsg[0].senderId === userId,
+        },
+        updatedAt: conv.updatedAt,
+        unreadCount: Number(unreadRes?.count || 0),
+      })
     }
-  })
 
-  return NextResponse.json({ chats })
+    // Sort combined by last activity
+    const all = [...orderChats, ...directChats].sort((a, b) => {
+      const timeA = a.type === 'order' ? a.lastMessage?.createdAt : a.updatedAt
+      const timeB = b.type === 'order' ? b.lastMessage?.createdAt : b.updatedAt
+      return new Date(timeB || 0).getTime() - new Date(timeA || 0).getTime()
+    })
+
+    return NextResponse.json({ chats: all })
+  } catch (e) {
+    console.error('Chats API error:', e)
+    return NextResponse.json({ error: 'Ошибка загрузки' }, { status: 500 })
+  }
 }

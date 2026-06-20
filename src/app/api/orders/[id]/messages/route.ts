@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { messages, orders } from '@/lib/schema'
-import { eq, asc, gt, and } from 'drizzle-orm'
+import { messages, users } from '@/lib/schema'
+import { eq, asc, gt, and, ne } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
@@ -35,12 +35,24 @@ export async function GET(
     whereConditions.push(gt(messages.createdAt, since))
   }
 
-  const messagesList = await db.query.messages.findMany({
-    where: and(...whereConditions),
-    with: { sender: { columns: { id: true, name: true, role: true, avatar: true } } },
-    orderBy: (messages, { asc }) => [asc(messages.createdAt)],
-    limit: 200,
+  const messagesList = await db.select({
+    id: messages.id,
+    content: messages.content,
+    senderId: messages.senderId,
+    read: messages.read,
+    createdAt: messages.createdAt,
+    attachmentUrl: messages.attachmentUrl,
+    attachmentName: messages.attachmentName,
+    attachmentType: messages.attachmentType,
+    attachmentSize: messages.attachmentSize,
+    sender: { id: users.id, name: users.name, role: users.role, avatar: users.avatar },
   })
+  .from(messages)
+  .leftJoin(users, eq(messages.senderId, users.id))
+  .where(and(...whereConditions))
+  .orderBy(asc(messages.createdAt))
+  .limit(200)
+
   return NextResponse.json({ messages: messagesList })
 }
 
@@ -101,6 +113,10 @@ export async function POST(
       content = body.content
     }
 
+    // Get sender info for the response
+    const [sender] = await db.select({ id: users.id, name: users.name, role: users.role, avatar: users.avatar })
+      .from(users).where(eq(users.id, payload.userId)).limit(1)
+
     const [message] = await db.insert(messages).values({
       id: randomUUID(),
       orderId: id,
@@ -114,11 +130,7 @@ export async function POST(
       createdAt: new Date().toISOString(),
     }).returning()
 
-    // Fetch with sender
-    const messageWithSender = await db.query.messages.findFirst({
-      where: eq(messages.id, message.id),
-      with: { sender: { columns: { id: true, name: true, role: true, avatar: true } } },
-    })
+    const messageWithSender = { ...message, sender: sender || { id: payload.userId, name: 'Вы', role: 'USER', avatar: null } }
 
     return NextResponse.json({ message: messageWithSender }, { status: 201 })
   } catch (e: unknown) {
@@ -126,4 +138,24 @@ export async function POST(
     console.error('Order message insert error:', e)
     return NextResponse.json({ error: 'Ошибка отправки' }, { status: 500 })
   }
+}
+
+// PATCH /api/orders/[id]/messages — mark messages as read
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const token = getTokenFromHeaders(req.headers) || (() => { const c = req.cookies.get('token'); return c?.value || null })()
+  if (!token) return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
+
+  const payload = await verifyToken(token)
+  if (!payload) return NextResponse.json({ error: 'Токен истёк' }, { status: 401 })
+
+  const { id } = await params
+
+  await db.update(messages)
+    .set({ read: true })
+    .where(and(eq(messages.orderId, id), ne(messages.senderId, payload.userId), eq(messages.read, false)))
+
+  return NextResponse.json({ ok: true })
 }

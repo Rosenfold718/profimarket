@@ -11,6 +11,7 @@ export const users = sqliteTable('User', {
   phone: text('phone'),
   role: text('role', { enum: ['CLIENT', 'EXECUTOR', 'ADMIN'] }).notNull().default('EXECUTOR'),
   avatar: text('avatar'),
+  lastSeenAt: text('lastSeenAt'),
   createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updatedAt').notNull(),
 })

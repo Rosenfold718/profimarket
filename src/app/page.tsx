@@ -15,18 +15,17 @@ import { ClientsView } from '@/views/clients'
 import { MyOrdersView } from '@/views/my-orders'
 import { MyResponsesView } from '@/views/my-responses'
 import { CreateOrderView } from '@/views/create-order'
-import { ConversationView } from '@/views/conversation'
 import { AdminView } from '@/views/admin'
 import { AppSidebar, AppHeader, MobileSidebar, ToastContainer } from '@/components/app/layout'
 
-function AppShell({ children }: { children: React.ReactNode }) {
+function AppShell({ children, noScroll }: { children: React.ReactNode; noScroll?: boolean }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <AppSidebar />
       <MobileSidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <AppHeader />
-        <main className="flex-1 overflow-y-auto">
+        <main className={`flex-1 ${noScroll ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {children}
         </main>
       </div>
@@ -60,6 +59,20 @@ export default function Page() {
       window.history.pushState({ view }, '')
     }
   }, [view])
+
+  // Heartbeat for online status (every 30s when authenticated)
+  useEffect(() => {
+    if (!user) return
+    const sendHeartbeat = () => {
+      fetch('/api/auth/heartbeat', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${useAppStore.getState().token}` },
+      }).catch(() => {})
+    }
+    sendHeartbeat()
+    const timer = setInterval(sendHeartbeat, 30_000)
+    return () => clearInterval(timer)
+  }, [user])
 
   // Check auth on mount
   useEffect(() => {
@@ -120,9 +133,8 @@ export default function Page() {
     'my-orders': <MyOrdersView />,
     'my-responses': <MyResponsesView />,
     'create-order': <CreateOrderView />,
-    'conversation': <ConversationView />,
     admin: <AdminView />,
   }
 
-  return <AppShell>{viewMap[view] || <DashboardView />}</AppShell>
+  return <AppShell noScroll={view === 'chats'}>{viewMap[view] || <DashboardView />}</AppShell>
 }

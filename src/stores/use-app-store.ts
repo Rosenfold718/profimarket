@@ -69,7 +69,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedOrderTab: 'info',
   navigateToProfile: (id) => set({ selectedProfileId: id, view: 'profile-view' }),
   selectedProfileId: null,
-  navigateToConversation: (id) => set({ selectedConversationId: id, view: 'conversation' }),
+  navigateToConversation: (id) => set({ selectedConversationId: id, view: 'chats' }),
   selectedConversationId: null,
 
   user: null,

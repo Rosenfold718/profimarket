@@ -212,17 +212,9 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     }).returning()
 
-    // Fetch with relations for response
-    const orderWithRelations = await db.query.orders.findFirst({
-      where: eq(orders.id, order.id),
-      with: {
-        client: { columns: { id: true, name: true, role: true } },
-        category: true,
-      },
-    })
-
-    return NextResponse.json({ order: orderWithRelations }, { status: 201 })
+    return NextResponse.json({ order }, { status: 201 })
   } catch (e: unknown) {
+    console.error('Order creation error:', e)
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
     return NextResponse.json({ error: 'Ошибка создания заказа' }, { status: 500 })
   }

@@ -14,7 +14,10 @@ export function authFetch(url: string, options: RequestInit = {}): Promise<Respo
   }
 
   if (!headers.has('Content-Type') && options.method && options.method !== 'GET') {
-    headers.set('Content-Type', 'application/json')
+    // Don't set Content-Type for FormData — the browser sets it automatically with the correct boundary
+    if (!(options.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json')
+    }
   }
 
   return fetch(url, { ...options, headers, credentials: 'include' })

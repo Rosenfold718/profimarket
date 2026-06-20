@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { orders, responses, messages } from '@/lib/schema'
-import { eq, and, desc, count } from 'drizzle-orm'
+import { eq, count } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -12,8 +12,8 @@ export async function GET(
   const order = await db.query.orders.findFirst({
     where: eq(orders.id, id),
     with: {
-      client: { columns: { id: true, name: true, role: true, phone: true, avatar: true }, with: { profile: true } },
-      executor: { columns: { id: true, name: true, role: true, phone: true, avatar: true }, with: { profile: true } },
+      client: { columns: { id: true, name: true, role: true, phone: true, avatar: true, lastSeenAt: true }, with: { profile: true } },
+      executor: { columns: { id: true, name: true, role: true, phone: true, avatar: true, lastSeenAt: true }, with: { profile: true } },
       category: true,
       responses: {
         with: { executor: { columns: { id: true, name: true, role: true, avatar: true }, with: { profile: true } } },
@@ -44,9 +44,7 @@ export async function PATCH(
   if (!payload) return NextResponse.json({ error: 'Токен истёк' }, { status: 401 })
 
   const { id } = await params
-  const order = await db.query.orders.findFirst({
-    where: eq(orders.id, id),
-  })
+  const [order] = await db.select({ clientId: orders.clientId }).from(orders).where(eq(orders.id, id)).limit(1)
   if (!order) return NextResponse.json({ error: 'Заказ не найден' }, { status: 404 })
   if (order.clientId !== payload.userId) return NextResponse.json({ error: 'Нет доступа' }, { status: 403 })
 
@@ -64,16 +62,7 @@ export async function PATCH(
 
     await db.update(orders).set(updateData).where(eq(orders.id, id))
 
-    const updated = await db.query.orders.findFirst({
-      where: eq(orders.id, id),
-      with: {
-        client: { columns: { id: true, name: true, avatar: true } },
-        category: true,
-        executor: { columns: { id: true, name: true, avatar: true } },
-      },
-    })
-
-    return NextResponse.json({ order: updated })
+    return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Ошибка обновления' }, { status: 500 })
   }

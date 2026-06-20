@@ -14,7 +14,6 @@ export async function GET(req: NextRequest) {
   const userId = payload.userId
 
   try {
-    // Find all conversations for this user
     const convs = await db.select({
       id: conversations.id,
       user1Id: conversations.user1Id,
@@ -25,26 +24,28 @@ export async function GET(req: NextRequest) {
     .where(or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId)))
     .orderBy(desc(conversations.updatedAt))
 
-    // For each conversation, get the other user and last message
     const result = (await Promise.all(convs.map(async (conv) => {
       const peerId = conv.user1Id === userId ? conv.user2Id : conv.user1Id
 
       const [peer, lastMsg] = await Promise.all([
-        db.select({ id: users.id, name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, peerId)).limit(1),
-        db.select().from(messages).where(eq(messages.conversationId, conv.id)).orderBy(desc(messages.createdAt)).limit(1),
+        db.select({ id: users.id, name: users.name, avatar: users.avatar, lastSeenAt: users.lastSeenAt }).from(users).where(eq(users.id, peerId)).limit(1),
+        db.select({
+          content: messages.content,
+          createdAt: messages.createdAt,
+          senderId: messages.senderId,
+        }).from(messages).where(eq(messages.conversationId, conv.id)).orderBy(desc(messages.createdAt)).limit(1),
       ])
 
-      // Skip conversations with no messages
       if (!lastMsg[0]) return null
 
-      const unreadRes = await db.select({ count: sql<number>`count(*)` })
+      const [unreadRes] = await db.select({ count: sql<number>`count(*)` })
         .from(messages)
         .where(and(eq(messages.conversationId, conv.id), ne(messages.senderId, userId), eq(messages.read, false)))
-      const unreadCount = Number(unreadRes[0]?.count || 0)
+      const unreadCount = Number(unreadRes?.count || 0)
 
       return {
         id: conv.id,
-        peer: peer[0] || { id: peerId, name: 'Удалённый пользователь' },
+        peer: peer[0] ? { ...peer[0], lastSeenAt: peer[0].lastSeenAt ?? undefined } : { id: peerId, name: 'Удалённый пользователь', avatar: undefined, lastSeenAt: undefined },
         lastMessage: {
           content: lastMsg[0].content,
           createdAt: lastMsg[0].createdAt,
@@ -74,7 +75,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Check if conversation already exists
     const existing = await db.select().from(conversations)
       .where(or(
         and(eq(conversations.user1Id, payload.userId), eq(conversations.user2Id, peerId)),
@@ -86,7 +86,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ conversation: existing[0] })
     }
 
-    // Create new conversation
     const now = new Date().toISOString()
     const [conv] = await db.insert(conversations).values({
       id: crypto.randomUUID(),

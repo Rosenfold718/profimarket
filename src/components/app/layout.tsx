@@ -149,7 +149,7 @@ const breadcrumbMap: Record<string, string[]> = {
 export function AppHeader() {
   const { user, view, setSidebarOpen } = useAppStore()
 
-  if (!user || view === 'landing' || view === 'auth') return null
+  if (!user || view === 'landing' || view === 'auth' || view === 'chats') return null
 
   const breadcrumbs = breadcrumbMap[view] || []
 

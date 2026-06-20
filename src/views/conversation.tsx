@@ -27,7 +27,7 @@ interface Msg {
   attachmentName?: string
   attachmentType?: string
   attachmentSize?: number
-  sender: { name: string; avatar?: string } | null
+  sender: { id?: string; name: string; avatar?: string } | null
 }
 
 function formatFileSize(bytes: number): string {
@@ -39,7 +39,7 @@ function formatFileSize(bytes: number): string {
 const POLL_INTERVAL = 2000
 
 export function ConversationView() {
-  const { selectedConversationId, setView, user, addToast } = useAppStore()
+  const { selectedConversationId, setView, user, addToast, setUnreadChats } = useAppStore()
   const [messages, setMessages] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -88,8 +88,15 @@ export function ConversationView() {
           }
         }
       } else {
-        setMessages(fetchedMsgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
-        authFetch(`/api/conversations/${selectedConversationId}/messages`, { method: 'PATCH' })
+        const sorted = fetchedMsgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        setMessages(sorted)
+        // Count unread messages from others and clear badge
+        const unreadFromOthers = sorted.filter(m => !m.read && m.senderId !== user?.id).length
+        if (unreadFromOthers > 0) {
+          authFetch(`/api/conversations/${selectedConversationId}/messages`, { method: 'PATCH' })
+            .then(() => setUnreadChats(Math.max(0, useAppStore.getState().unreadChats - unreadFromOthers)))
+            .catch(() => {})
+        }
       }
     } catch {
       if (!useSince) addToast('Ошибка загрузки сообщений', 'error')
@@ -184,6 +191,7 @@ export function ConversationView() {
       const data = await res.json()
       if (res.ok) {
         setMessages(prev => {
+          if (prev.some(m => m.id === data.message.id)) return prev // already added by polling
           const merged = [...prev, data.message]
           merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           messagesRef.current = merged

@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { messages, conversations, users } from '@/lib/schema'
-import { eq, and, ne, desc, sql } from 'drizzle-orm'
+import { eq, and, ne, asc, sql } from 'drizzle-orm'
 import { getTokenFromHeaders, verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
@@ -49,12 +49,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     attachmentName: messages.attachmentName,
     attachmentType: messages.attachmentType,
     attachmentSize: messages.attachmentSize,
-    sender: { name: users.name, avatar: users.avatar },
+    sender: { id: users.id, name: users.name, avatar: users.avatar },
   })
   .from(messages)
   .leftJoin(users, eq(messages.senderId, users.id))
   .where(and(...conditions))
-  .orderBy(desc(messages.createdAt))
+  .orderBy(asc(messages.createdAt))
 
   return NextResponse.json({ messages: msgs })
 }
@@ -119,6 +119,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       content = body.content.trim()
     }
 
+    // Get sender info for the response
+    const [sender] = await db.select({ id: users.id, name: users.name, avatar: users.avatar })
+      .from(users).where(eq(users.id, payload.userId)).limit(1)
+
     const now = new Date().toISOString()
     const [msg] = await db.insert(messages).values({
       id: randomUUID(),
@@ -136,7 +140,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Update conversation timestamp
     await db.update(conversations).set({ updatedAt: now }).where(eq(conversations.id, id))
 
-    return NextResponse.json({ message: msg }, { status: 201 })
+    const msgWithSender = { ...msg, sender: sender || { id: payload.userId, name: 'Вы', avatar: null } }
+
+    return NextResponse.json({ message: msgWithSender }, { status: 201 })
   } catch (e: unknown) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
     console.error('Conversation message insert error:', e)
