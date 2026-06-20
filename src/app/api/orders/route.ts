@@ -1,7 +1,10 @@
 import { db } from '@/lib/db'
+import { orders, users, categories, responses, messages } from '@/lib/schema'
+import { eq, and, or, desc, sql, count, like, inArray } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
+import { randomUUID } from 'crypto'
 
 // GET /api/orders — list orders with filters
 export async function GET(req: NextRequest) {
@@ -13,36 +16,114 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')))
 
-  const where: Record<string, unknown> = {}
+  // Build where conditions
+  const conditions: any[] = []
+
+  // Status filter
   if (status) {
     const statuses = status.split(',').map(s => s.trim())
     if (statuses.length === 1) {
-      where.status = statuses[0]
+      conditions.push(eq(orders.status, statuses[0]))
     } else {
-      where.status = { in: statuses }
+      conditions.push(inArray(orders.status, statuses))
     }
   } else {
-    where.status = 'OPEN'
+    conditions.push(eq(orders.status, 'OPEN'))
   }
-  if (category) where.category = { slug: category }
-  if (region) where.region = region
-  if (search) where.OR = [
-    { title: { contains: search } },
-    { description: { contains: search } },
-  ]
 
-  const [orders, total] = await Promise.all([
-    db.order.findMany({
-      where,
-      include: { client: { select: { id: true, name: true, role: true } }, category: true, _count: { select: { responses: true, messages: true } } },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    db.order.count({ where }),
-  ])
+  if (region) conditions.push(eq(orders.region, region))
 
-  return NextResponse.json({ orders, total, page, pages: Math.ceil(total / limit) })
+  if (category) {
+    conditions.push(eq(categories.slug, category))
+  }
+
+  if (search) {
+    conditions.push(or(
+      like(orders.title, `%${search}%`),
+      like(orders.description, `%${search}%`),
+    ))
+  }
+
+  const whereClause = category
+    ? and(...conditions)
+    : and(...conditions)
+
+  const skip = (page - 1) * limit
+
+  // Fetch orders with client, category, and counts
+  const ordersResult = await db
+    .select({
+      id: orders.id,
+      title: orders.title,
+      description: orders.description,
+      categoryId: orders.categoryId,
+      region: orders.region,
+      city: orders.city,
+      budgetFrom: orders.budgetFrom,
+      budgetTo: orders.budgetTo,
+      deadline: orders.deadline,
+      status: orders.status,
+      clientId: orders.clientId,
+      executorId: orders.executorId,
+      createdAt: orders.createdAt,
+      updatedAt: orders.updatedAt,
+      client: { id: users.id, name: users.name, role: users.role },
+      category: { id: categories.id, name: categories.name, slug: categories.slug, icon: categories.icon, description: categories.description, order: categories.order },
+    })
+    .from(orders)
+    .leftJoin(users, eq(orders.clientId, users.id))
+    .leftJoin(categories, eq(orders.categoryId, categories.id))
+    .where(whereClause)
+    .orderBy(desc(orders.createdAt))
+    .limit(limit)
+    .offset(skip)
+
+  // Get counts for each order
+  const orderIds = ordersResult.map(o => o.id)
+
+  let responseCounts: Record<string, number> = {}
+  let messageCounts: Record<string, number> = {}
+
+  if (orderIds.length > 0) {
+    const responseCountResults = await db
+      .select({ orderId: responses.orderId, count: count() })
+      .from(responses)
+      .where(inArray(responses.orderId, orderIds))
+      .groupBy(responses.orderId)
+
+    const messageCountResults = await db
+      .select({ orderId: messages.orderId, count: count() })
+      .from(messages)
+      .where(inArray(messages.orderId, orderIds))
+      .groupBy(messages.orderId)
+
+    responseCounts = Object.fromEntries(responseCountResults.map(r => [r.orderId, r.count]))
+    messageCounts = Object.fromEntries(messageCountResults.map(r => [r.orderId, r.count]))
+  }
+
+  const ordersWithCounts = ordersResult.map(o => ({
+    ...o,
+    _count: {
+      responses: responseCounts[o.id] || 0,
+      messages: messageCounts[o.id] || 0,
+    },
+  }))
+
+  // Get total count
+  const totalResult = category
+    ? await db
+        .select({ total: count() })
+        .from(orders)
+        .innerJoin(categories, eq(orders.categoryId, categories.id))
+        .where(whereClause)
+    : await db
+        .select({ total: count() })
+        .from(orders)
+        .where(whereClause)
+
+  const total = totalResult[0]?.total || 0
+
+  return NextResponse.json({ orders: ordersWithCounts, total, page, pages: Math.ceil(total / limit) })
 }
 
 // POST /api/orders — create order
@@ -67,15 +148,34 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const data = schema.parse(body)
-    const order = await db.order.create({
-      data: {
-        ...data,
-        deadline: data.deadline ? new Date(data.deadline) : null,
-        clientId: payload.userId,
+    const now = new Date().toISOString()
+
+    const [order] = await db.insert(orders).values({
+      id: randomUUID(),
+      title: data.title,
+      description: data.description,
+      categoryId: data.categoryId || null,
+      region: data.region || null,
+      city: data.city || null,
+      budgetFrom: data.budgetFrom || null,
+      budgetTo: data.budgetTo || null,
+      deadline: data.deadline ? new Date(data.deadline).toISOString() : null,
+      status: 'OPEN',
+      clientId: payload.userId,
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+
+    // Fetch with relations for response
+    const orderWithRelations = await db.query.orders.findFirst({
+      where: eq(orders.id, order.id),
+      with: {
+        client: { columns: { id: true, name: true, role: true } },
+        category: true,
       },
-      include: { client: { select: { id: true, name: true, role: true } }, category: true },
     })
-    return NextResponse.json({ order }, { status: 201 })
+
+    return NextResponse.json({ order: orderWithRelations }, { status: 201 })
   } catch (e: unknown) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
     return NextResponse.json({ error: 'Ошибка создания заказа' }, { status: 500 })

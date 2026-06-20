@@ -1,4 +1,6 @@
 import { db } from '@/lib/db'
+import { orders, messages, users, categories } from '@/lib/schema'
+import { eq, and, or, desc } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -16,41 +18,37 @@ export async function GET(req: NextRequest) {
 
   const userId = payload.userId
 
-  // Single query: fetch all orders where user is client or executor,
-  // including category, both participants, and all messages (ordered desc).
-  // In-memory processing for lastMessage, totalMessages, unreadCount avoids N+1.
-  const orders = await db.order.findMany({
-    where: {
-      OR: [
-        { clientId: userId },
-        { executorId: userId },
-        { messages: { some: { senderId: userId } } },
-      ],
-      messages: { some: {} },
-    },
-    include: {
-      category: { select: { name: true } },
-      client: { select: { id: true, name: true, avatar: true } },
-      executor: { select: { id: true, name: true, avatar: true } },
+  // Fetch all orders where user is client, executor, or has sent a message,
+  // and that have at least one message.
+  // We fetch orders with messages ordered desc, then compute lastMessage,
+  // totalMessages, unreadCount in-memory.
+  const allOrders = await db.query.orders.findMany({
+    where: or(
+      eq(orders.clientId, userId),
+      eq(orders.executorId, userId),
+    ),
+    with: {
+      category: { columns: { name: true } },
+      client: { columns: { id: true, name: true, avatar: true } },
+      executor: { columns: { id: true, name: true, avatar: true } },
       messages: {
-        orderBy: { createdAt: 'desc' },
-        select: {
-          content: true,
-          createdAt: true,
-          read: true,
-          senderId: true,
-          sender: { select: { name: true, avatar: true } },
+        orderBy: (messages, { desc }) => [desc(messages.createdAt)],
+        with: {
+          sender: { columns: { name: true, avatar: true } },
         },
       },
     },
-    orderBy: { updatedAt: 'desc' },
+    orderBy: (orders, { desc }) => [desc(orders.updatedAt)],
   })
 
-  const chats = orders.map((order) => {
-    const messages = order.messages
-    const lastMessage = messages[0] || null
-    const totalMessages = messages.length
-    const unreadCount = messages.filter(
+  // Filter orders that have messages
+  const ordersWithMessages = allOrders.filter(o => o.messages.length > 0)
+
+  const chats = ordersWithMessages.map((order) => {
+    const msgs = order.messages
+    const lastMessage = msgs[0] || null
+    const totalMessages = msgs.length
+    const unreadCount = msgs.filter(
       (m) => !m.read && m.senderId !== userId,
     ).length
 

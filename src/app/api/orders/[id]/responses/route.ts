@@ -1,7 +1,10 @@
 import { db } from '@/lib/db'
+import { responses, orders } from '@/lib/schema'
+import { eq, and, desc } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
+import { randomUUID } from 'crypto'
 
 // GET responses for an order
 export async function GET(
@@ -9,12 +12,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const responses = await db.response.findMany({
-    where: { orderId: id },
-    include: { executor: { select: { id: true, name: true, role: true, profile: true } } },
-    orderBy: { createdAt: 'desc' },
+  const responsesList = await db.query.responses.findMany({
+    where: eq(responses.orderId, id),
+    with: { executor: { columns: { id: true, name: true, role: true }, with: { profile: true } } },
+    orderBy: (responses, { desc }) => [desc(responses.createdAt)],
   })
-  return NextResponse.json({ responses })
+  return NextResponse.json({ responses: responsesList })
 }
 
 // POST a response (bid) on an order
@@ -39,20 +42,28 @@ export async function POST(
     const body = schema.parse(await req.json())
 
     // Check not already responded
-    const existing = await db.response.findFirst({ where: { orderId: id, executorId: payload.userId } })
+    const existing = await db.query.responses.findFirst({
+      where: and(eq(responses.orderId, id), eq(responses.executorId, payload.userId)),
+    })
     if (existing) return NextResponse.json({ error: 'Вы уже откликнулись на этот заказ' }, { status: 409 })
 
-    const response = await db.response.create({
-      data: {
-        orderId: id,
-        executorId: payload.userId,
-        message: body.message,
-        proposedBudget: body.proposedBudget,
-        proposedDeadline: body.proposedDeadline ? new Date(body.proposedDeadline) : null,
-      },
-      include: { executor: { select: { id: true, name: true, role: true, profile: true } } },
+    const [response] = await db.insert(responses).values({
+      id: randomUUID(),
+      orderId: id,
+      executorId: payload.userId,
+      message: body.message,
+      proposedBudget: body.proposedBudget || null,
+      proposedDeadline: body.proposedDeadline ? new Date(body.proposedDeadline).toISOString() : null,
+      createdAt: new Date().toISOString(),
+    }).returning()
+
+    // Fetch with executor
+    const responseWithExecutor = await db.query.responses.findFirst({
+      where: eq(responses.id, response.id),
+      with: { executor: { columns: { id: true, name: true, role: true }, with: { profile: true } } },
     })
-    return NextResponse.json({ response }, { status: 201 })
+
+    return NextResponse.json({ response: responseWithExecutor }, { status: 201 })
   } catch (e: unknown) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
     return NextResponse.json({ error: 'Ошибка отклика' }, { status: 500 })
@@ -74,21 +85,27 @@ export async function PATCH(
   const { responseId, status } = await req.json()
   if (!['ACCEPTED', 'REJECTED'].includes(status)) return NextResponse.json({ error: 'Неверный статус' }, { status: 400 })
 
-  const order = await db.order.findUnique({ where: { id: orderId } })
+  const order = await db.query.orders.findFirst({
+    where: eq(orders.id, orderId),
+  })
   if (!order || order.clientId !== payload.userId) return NextResponse.json({ error: 'Нет доступа' }, { status: 403 })
 
-  const response = await db.response.update({
-    where: { id: responseId },
-    data: { status },
-    include: { executor: { select: { id: true, name: true } } },
+  const [updated] = await db.update(responses)
+    .set({ status })
+    .where(eq(responses.id, responseId))
+    .returning()
+
+  // Fetch with executor for response
+  const responseWithExecutor = await db.query.responses.findFirst({
+    where: eq(responses.id, updated.id),
+    with: { executor: { columns: { id: true, name: true } } },
   })
 
-  if (status === 'ACCEPTED') {
-    await db.order.update({
-      where: { id: orderId },
-      data: { status: 'IN_PROGRESS', executorId: response.executorId },
-    })
+  if (status === 'ACCEPTED' && responseWithExecutor) {
+    await db.update(orders)
+      .set({ status: 'IN_PROGRESS', executorId: responseWithExecutor.executorId, updatedAt: new Date().toISOString() })
+      .where(eq(orders.id, orderId))
   }
 
-  return NextResponse.json({ response })
+  return NextResponse.json({ response: responseWithExecutor })
 }

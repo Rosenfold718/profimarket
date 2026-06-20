@@ -1,4 +1,6 @@
 import { db } from '@/lib/db'
+import { users } from '@/lib/schema'
+import { eq } from 'drizzle-orm'
 import { verifyToken, signToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -10,7 +12,10 @@ export async function GET(req: NextRequest) {
   const payload = await verifyToken(token)
   if (!payload) return NextResponse.json({ error: 'Токен истёк' }, { status: 401 })
 
-  const user = await db.user.findUnique({ where: { id: payload.userId }, include: { profile: true } })
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, payload.userId),
+    with: { profile: true },
+  })
   if (!user) return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
 
   // Issue a fresh token so Zustand always has a valid one

@@ -1,7 +1,10 @@
 import { db } from '@/lib/db'
+import { users, profiles } from '@/lib/schema'
+import { eq } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
+import { randomUUID } from 'crypto'
 
 // GET /api/profile — current user's profile
 export async function GET(req: NextRequest) {
@@ -11,9 +14,9 @@ export async function GET(req: NextRequest) {
   const payload = await verifyToken(token)
   if (!payload) return NextResponse.json({ error: 'Токен истёк' }, { status: 401 })
 
-  const user = await db.user.findUnique({
-    where: { id: payload.userId },
-    include: { profile: true },
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, payload.userId),
+    with: { profile: true },
   })
   if (!user) return NextResponse.json({ error: 'Не найден' }, { status: 404 })
 
@@ -54,21 +57,34 @@ export async function PUT(req: NextRequest) {
     if (body.avatar !== undefined) userData.avatar = body.avatar
 
     if (Object.keys(userData).length > 0) {
-      await db.user.update({ where: { id: payload.userId }, data: userData })
+      userData.updatedAt = new Date().toISOString()
+      await db.update(users).set(userData).where(eq(users.id, payload.userId))
     }
 
-    // Update profile
+    // Update profile using upsert pattern
     const { name: _n, phone: _p, avatar: _a, ...profileData } = body
-    // Only upsert if there are profile fields to update
     if (Object.keys(profileData).length > 0) {
-      await db.profile.upsert({
-        where: { userId: payload.userId },
-        create: { userId: payload.userId, specializations: '[]', ...profileData },
-        update: profileData as Record<string, unknown>,
+      const existingProfile = await db.query.profiles.findFirst({
+        where: eq(profiles.userId, payload.userId),
       })
+
+      if (existingProfile) {
+        await db.update(profiles).set(profileData as Record<string, unknown>).where(eq(profiles.userId, payload.userId))
+      } else {
+        await db.insert(profiles).values({
+          id: randomUUID(),
+          userId: payload.userId,
+          specializations: (profileData as Record<string, unknown>).specializations as string || '[]',
+          ...profileData,
+        })
+      }
     }
 
-    const user = await db.user.findUnique({ where: { id: payload.userId }, include: { profile: true } })
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, payload.userId),
+      with: { profile: true },
+    })
+
     return NextResponse.json({ user: { id: user!.id, name: user!.name, email: user!.email, role: user!.role, phone: user!.phone, avatar: user!.avatar, profile: user!.profile } })
   } catch (e: unknown) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })

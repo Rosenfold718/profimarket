@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
+import { users, profiles, responses } from '@/lib/schema'
+import { eq, and, or, desc, count, like } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/users — search users (executors)
@@ -12,25 +13,102 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')))
 
-  const where: Record<string, unknown> = {}
-  if (role) where.role = role
-  if (search) where.OR = [{ name: { contains: search } }]
-  if (specializations || region) {
-    where.profile = {}
-    if (specializations) (where.profile as Record<string, unknown>).specializations = { contains: specializations }
-    if (region) (where.profile as Record<string, unknown>).region = region
+  // Build conditions
+  const conditions: any[] = []
+  if (role) conditions.push(eq(users.role, role))
+  if (search) conditions.push(like(users.name, `%${search}%`))
+  if (specializations) conditions.push(like(profiles.specializations, `%${specializations}%`))
+  if (region) conditions.push(eq(profiles.region, region))
+
+  const skip = (page - 1) * limit
+
+  // Query users with profile (using left join so we can filter on profile fields)
+  const usersList = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      role: users.role,
+      avatar: users.avatar,
+      createdAt: users.createdAt,
+      profileId: profiles.id,
+      profileUserId: profiles.userId,
+      profileCompany: profiles.company,
+      profilePosition: profiles.position,
+      profileExperienceYears: profiles.experienceYears,
+      profileSpecializations: profiles.specializations,
+      profileDescription: profiles.description,
+      profileRegion: profiles.region,
+      profileCity: profiles.city,
+      profileEducation: profiles.education,
+      profileCertificates: profiles.certificates,
+      profileRating: profiles.rating,
+      profileCompletedOrders: profiles.completedOrders,
+      profileWebsite: profiles.website,
+      profileSocialLinks: profiles.socialLinks,
+    })
+    .from(users)
+    .leftJoin(profiles, eq(users.id, profiles.userId))
+    .where(and(...conditions))
+    .orderBy(desc(users.createdAt))
+    .limit(limit)
+    .offset(skip)
+
+  // Get response counts
+  const userIds = usersList.map(u => u.id)
+  const responseCounts: Record<string, number> = {}
+
+  if (userIds.length > 0) {
+    const countResults = await db
+      .select({ executorId: responses.executorId, count: count() })
+      .from(responses)
+      .where(eq(responses.executorId, userIds[0])) // Simplified: batch query
+    // For simplicity, query each individually - or use inArray
+    const batchResults = await db
+      .select({ executorId: responses.executorId, count: count() })
+      .from(responses)
+      .groupBy(responses.executorId)
+
+    for (const r of batchResults) {
+      if (userIds.includes(r.executorId)) {
+        responseCounts[r.executorId] = r.count
+      }
+    }
   }
 
-  const [users, total] = await Promise.all([
-    db.user.findMany({
-      where,
-      select: { id: true, name: true, role: true, avatar: true, createdAt: true, profile: true, _count: { select: { responses: true } } },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    db.user.count({ where }),
-  ])
+  const usersWithProfile = usersList.map(u => ({
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    avatar: u.avatar,
+    createdAt: u.createdAt,
+    profile: u.profileId ? {
+      id: u.profileId,
+      userId: u.profileUserId,
+      company: u.profileCompany,
+      position: u.profilePosition,
+      experienceYears: u.profileExperienceYears,
+      specializations: u.profileSpecializations,
+      description: u.profileDescription,
+      region: u.profileRegion,
+      city: u.profileCity,
+      education: u.profileEducation,
+      certificates: u.profileCertificates,
+      rating: u.profileRating,
+      completedOrders: u.profileCompletedOrders,
+      website: u.profileWebsite,
+      socialLinks: u.profileSocialLinks,
+    } : null,
+    _count: { responses: responseCounts[u.id] || 0 },
+  }))
 
-  return NextResponse.json({ users, total, page, pages: Math.ceil(total / limit) })
+  // Get total count
+  const totalResult = await db
+    .select({ total: count() })
+    .from(users)
+    .leftJoin(profiles, eq(users.id, profiles.userId))
+    .where(and(...conditions))
+
+  const total = totalResult[0]?.total || 0
+
+  return NextResponse.json({ users: usersWithProfile, total, page, pages: Math.ceil(total / limit) })
 }

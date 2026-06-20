@@ -1,10 +1,28 @@
 import { Server } from 'socket.io'
 import { createServer } from 'http'
-import { PrismaClient } from '@prisma/client'
+import { drizzle } from 'drizzle-orm/libsql'
+import { createClient } from '@libsql/client'
+import { eq } from 'drizzle-orm'
 
-const db = new PrismaClient({
-  datasourceUrl: 'file:/home/z/my-project/db/custom.db',
+// Inline schema definitions for the chat service (matching src/lib/schema.ts table names)
+// We redefine them here because mini-services are independent bun projects
+import { sqliteTable, text, boolean } from 'drizzle-orm/sqlite-core'
+
+const messagesTable = sqliteTable('Message', {
+  id: text('id').primaryKey(),
+  orderId: text('orderId').notNull(),
+  senderId: text('senderId').notNull(),
+  content: text('content').notNull(),
+  read: boolean('read', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('createdAt').notNull(),
 })
+
+const client = createClient({
+  url: process.env.TURSO_URL || 'file:/home/z/my-project/db/custom.db',
+  authToken: process.env.TURSO_AUTH_TOKEN,
+})
+
+const db = drizzle(client)
 
 const PORT = 3003
 
@@ -74,13 +92,17 @@ io.on('connection', (socket) => {
       }
 
       try {
-        const message = await db.message.create({
-          data: {
-            orderId,
-            senderId,
-            content: content.trim(),
-          },
-        })
+        const now = new Date().toISOString()
+        const id = crypto.randomUUID()
+
+        const [message] = await db.insert(messagesTable).values({
+          id,
+          orderId,
+          senderId,
+          content: content.trim(),
+          createdAt: now,
+          read: false,
+        }).returning()
 
         const room = getRoomName(orderId)
         // Broadcast to everyone in the room EXCEPT the sender
@@ -112,10 +134,9 @@ io.on('connection', (socket) => {
       }
 
       try {
-        await db.message.update({
-          where: { id: messageId },
-          data: { read: true },
-        })
+        await db.update(messagesTable)
+          .set({ read: true })
+          .where(eq(messagesTable.id, messageId))
 
         const room = getRoomName(orderId)
         io.to(room).emit('messageRead', { orderId, messageId })

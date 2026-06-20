@@ -1,8 +1,10 @@
-'use server'
 import { db } from '@/lib/db'
+import { users, profiles } from '@/lib/schema'
+import { eq } from 'drizzle-orm'
 import { signToken, hashPassword } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
+import { randomUUID } from 'crypto'
 
 const schema = z.object({
   email: z.email('Некорректный email'),
@@ -16,14 +18,30 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { email, password, name, role } = schema.parse(body)
 
-    const exists = await db.user.findUnique({ where: { email } })
+    const exists = await db.query.users.findFirst({
+      where: eq(users.email, email),
+    })
     if (exists) return NextResponse.json({ error: 'Этот email уже зарегистрирован' }, { status: 409 })
 
     const passwordHash = await hashPassword(password)
-    const user = await db.user.create({ data: { email, passwordHash, name, role } })
+    const now = new Date().toISOString()
+
+    const [user] = await db.insert(users).values({
+      id: randomUUID(),
+      email,
+      passwordHash,
+      name,
+      role,
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
 
     if (role === 'EXECUTOR') {
-      await db.profile.create({ data: { userId: user.id, specializations: '[]' } })
+      await db.insert(profiles).values({
+        id: randomUUID(),
+        userId: user.id,
+        specializations: '[]',
+      })
     }
 
     const token = await signToken({ userId: user.id, email: user.email, role: user.role })

@@ -1,4 +1,6 @@
 import { db } from '@/lib/db'
+import { users } from '@/lib/schema'
+import { eq } from 'drizzle-orm'
 import { signToken, verifyPassword } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
@@ -13,7 +15,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { email, password } = schema.parse(body)
 
-    const user = await db.user.findUnique({ where: { email }, include: { profile: true } })
+    const user = await db.query.users.findFirst({
+      where: eq(users.email, email),
+      with: { profile: true },
+    })
     if (!user) return NextResponse.json({ error: 'Неверный email или пароль' }, { status: 401 })
 
     const valid = await verifyPassword(password, user.passwordHash)
