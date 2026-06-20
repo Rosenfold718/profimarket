@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { users, profiles, orders, responses } from '@/lib/schema'
-import { eq, and, count } from 'drizzle-orm'
+import { users, profiles, orders, responses, categories } from '@/lib/schema'
+import { eq, desc, count } from 'drizzle-orm'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(
@@ -36,6 +36,25 @@ export async function GET(
     .from(responses)
     .where(eq(responses.executorId, id))
 
+  // Get client orders with category info
+  const clientOrders = await db
+    .select({
+      id: orders.id,
+      title: orders.title,
+      status: orders.status,
+      budgetFrom: orders.budgetFrom,
+      budgetTo: orders.budgetTo,
+      city: orders.city,
+      region: orders.region,
+      createdAt: orders.createdAt,
+      categoryName: categories.name,
+    })
+    .from(orders)
+    .leftJoin(categories, eq(orders.categoryId, categories.id))
+    .where(eq(orders.clientId, id))
+    .orderBy(desc(orders.createdAt))
+    .limit(50)
+
   return NextResponse.json({
     user: {
       ...user,
@@ -44,6 +63,7 @@ export async function GET(
         executorOrders: executorOrderCount.count,
         responses: responseCount.count,
       },
+      clientOrders,
     },
   })
 }

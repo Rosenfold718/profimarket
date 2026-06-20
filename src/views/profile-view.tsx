@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { motion } from 'framer-motion'
 import {
   Star, MapPin, Briefcase, Clock, Building, GraduationCap, Award,
-  Globe, ArrowLeft, ExternalLink, CheckCircle2, MessageSquare
+  Globe, ArrowLeft, ExternalLink, CheckCircle2, MessageSquare, ChevronRight
 } from 'lucide-react'
 import { authFetch } from '@/lib/fetch'
 
@@ -22,6 +22,12 @@ interface ProfileData {
     website?: string
   } | null
   _count?: { clientOrders: number; executorOrders: number; responses: number }
+  clientOrders?: Array<{
+    id: string; title: string; status: string
+    budgetFrom?: number; budgetTo?: number
+    city?: string; region?: string; createdAt: string
+    categoryName?: string | null
+  }>
 }
 
 export function ProfileView() {
@@ -80,6 +86,21 @@ export function ProfileView() {
   const edu = p?.education ? JSON.parse(p.education) : []
   const certs = p?.certificates ? JSON.parse(p.certificates) : []
   const totalOrders = (profileData._count?.clientOrders || 0) + (profileData._count?.executorOrders || 0)
+
+  const statusColor: Record<string, string> = {
+    OPEN: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800',
+    IN_PROGRESS: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800',
+    COMPLETED: 'bg-muted text-muted-foreground',
+    CANCELLED: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800',
+  }
+  const statusLabel: Record<string, string> = { OPEN: 'Открыт', IN_PROGRESS: 'В работе', COMPLETED: 'Выполнен', CANCELLED: 'Отменён' }
+  const formatBudget = (from?: number, to?: number) => {
+    if (!from && !to) return 'Договорная'
+    const f = from ? `${(from / 1000).toFixed(0)}K` : ''
+    const t = to ? `${(to / 1000).toFixed(0)}K` : ''
+    return `${f} — ${t} ₽`
+  }
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 
   return (
     <div className="p-5 lg:p-8 max-w-3xl mx-auto">
@@ -231,6 +252,47 @@ export function ProfileView() {
             </Card>
           )}
         </div>
+
+        {/* Client orders */}
+        {profileData.clientOrders && profileData.clientOrders.length > 0 && (
+          <Card className="border bg-card mt-5">
+            <CardContent className="p-5">
+              <h3 className="font-bold text-base mb-4 flex items-center gap-2">
+                <Briefcase className="w-4 h-4" />
+                Заказы ({profileData.clientOrders.length})
+              </h3>
+              <div className="space-y-2.5">
+                {profileData.clientOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    onClick={() => navigateToOrder(order.id)}
+                    className="flex items-center justify-between gap-4 p-3.5 rounded-xl border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${statusColor[order.status]}`}>
+                          {statusLabel[order.status]}
+                        </Badge>
+                        {order.categoryName && (
+                          <span className="text-xs text-muted-foreground">{order.categoryName}</span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium truncate">{order.title}</p>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                        {order.city && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{order.city}</span>}
+                        <span>{formatDate(order.createdAt)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold">{formatBudget(order.budgetFrom, order.budgetTo)}</p>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground mt-1 ml-auto" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Actions */}
         {user && user.id !== profileData.id && (
