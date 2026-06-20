@@ -4,8 +4,18 @@ import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, Send, Loader2 } from 'lucide-react'
+import { ArrowLeft, Send, Loader2, Trash2 } from 'lucide-react'
 import { motion } from 'framer-motion'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface Msg {
   id: string
@@ -24,6 +34,9 @@ export function ConversationView() {
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null)
+  const [showDeleteChat, setShowDeleteChat] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const wasAtBottomRef = useRef(true)
   const prevCountRef = useRef(0)
@@ -138,6 +151,45 @@ export function ConversationView() {
     }
   }
 
+  const deleteMessage = async (msgId: string) => {
+    if (!selectedConversationId) return
+    setDeleting(true)
+    try {
+      const res = await authFetch(`/api/conversations/${selectedConversationId}/messages/${msgId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setMessages(prev => prev.filter(m => m.id !== msgId))
+      } else {
+        const d = await res.json()
+        addToast(d.error || 'Ошибка удаления', 'error')
+      }
+    } catch {
+      addToast('Ошибка сети', 'error')
+    } finally {
+      setDeleting(false)
+      setDeleteMsgId(null)
+    }
+  }
+
+  const deleteConversation = async () => {
+    if (!selectedConversationId) return
+    setDeleting(true)
+    try {
+      const res = await authFetch(`/api/conversations/${selectedConversationId}`, { method: 'DELETE' })
+      if (res.ok) {
+        addToast('Чат удалён', 'success')
+        setView('chats')
+      } else {
+        const d = await res.json()
+        addToast(d.error || 'Ошибка удаления', 'error')
+      }
+    } catch {
+      addToast('Ошибка сети', 'error')
+    } finally {
+      setDeleting(false)
+      setShowDeleteChat(false)
+    }
+  }
+
   const formatTime = (d: string) => {
     const date = new Date(d)
     return date.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -159,6 +211,15 @@ export function ConversationView() {
         <Button variant="ghost" size="sm" onClick={() => setView('chats')} className="gap-2">
           <ArrowLeft className="w-4 h-4" />
           Назад
+        </Button>
+        <div className="flex-1" />
+        <Button
+          variant="ghost" size="sm"
+          onClick={() => setShowDeleteChat(true)}
+          className="gap-2 text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="w-4 h-4" />
+          <span className="hidden sm:inline">Удалить чат</span>
         </Button>
       </div>
 
@@ -194,9 +255,20 @@ export function ConversationView() {
                   </div>
                 )}
                 <div className={`max-w-[75%] ${isMine ? 'items-end' : 'items-start'}`}>
-                  {!isMine && msg.sender && (
-                    <p className="text-xs font-medium text-muted-foreground mb-0.5">{msg.sender.name}</p>
-                  )}
+                  <div className={`flex items-center gap-1.5 ${isMine ? 'flex-row-reverse' : ''}`}>
+                    {!isMine && msg.sender && (
+                      <p className="text-xs font-medium text-muted-foreground mb-0.5">{msg.sender.name}</p>
+                    )}
+                    {isMine && (
+                      <button
+                        onClick={() => setDeleteMsgId(msg.id)}
+                        className="p-0.5 rounded text-primary-foreground/40 hover:text-primary-foreground/80 transition-colors"
+                        aria-label="Удалить сообщение"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                   <div className={`rounded-2xl px-4 py-2.5 text-sm ${
                     isMine
                       ? 'bg-primary text-primary-foreground rounded-br-md'
@@ -214,6 +286,48 @@ export function ConversationView() {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Delete message confirmation */}
+      <AlertDialog open={!!deleteMsgId} onOpenChange={(open) => !open && setDeleteMsgId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить сообщение?</AlertDialogTitle>
+            <AlertDialogDescription>Сообщение будет удалено безвозвратно.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMsgId && deleteMessage(deleteMsgId)}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete chat confirmation */}
+      <AlertDialog open={showDeleteChat} onOpenChange={setShowDeleteChat}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить чат?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Все сообщения будут удалены безвозвратно. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteConversation}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Input */}
       <div className="border-t px-4 py-3 shrink-0">

@@ -7,8 +7,18 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { motion } from 'framer-motion'
-import { MessageSquare, Search, ArrowLeft, MapPin } from 'lucide-react'
+import { MessageSquare, Search, ArrowLeft, MapPin, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface OrderChat {
   type: 'order'
@@ -47,6 +57,8 @@ export function ChatsView() {
   const [items, setItems] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'direct'; id: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const isFirstLoad = useRef(true)
 
   const loadChats = useCallback(async () => {
@@ -127,6 +139,26 @@ export function ChatsView() {
     }
   }
 
+  const handleDeleteConversation = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const res = await authFetch(`/api/conversations/${deleteTarget.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setItems(prev => prev.filter(i => i.type !== 'direct' || i.id !== deleteTarget.id))
+        addToast('Чат удалён', 'success')
+      } else {
+        const d = await res.json()
+        addToast(d.error || 'Ошибка удаления', 'error')
+      }
+    } catch {
+      addToast('Ошибка сети', 'error')
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
+  }
+
   const getSearchText = (item: ChatItem) => {
     if (item.type === 'order') return `${item.title} ${item.interlocutor.name}`.toLowerCase()
     return item.peer.name.toLowerCase()
@@ -188,9 +220,18 @@ export function ChatsView() {
               transition={{ delay: i * 0.02, duration: 0.2 }}
             >
               <Card
-                className={`cursor-pointer border bg-card transition-all hover:shadow-md ${item.unreadCount > 0 ? 'border-l-4 border-l-primary' : ''}`}
+                className={`relative group cursor-pointer border bg-card transition-all hover:shadow-md ${item.unreadCount > 0 ? 'border-l-4 border-l-primary' : ''}`}
                 onClick={() => handleClick(item)}
               >
+                {item.type === 'direct' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'direct', id: item.id }) }}
+                    className="absolute top-3 right-3 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                    aria-label="Удалить чат"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-start gap-3.5">
                     {/* Avatar */}
@@ -268,6 +309,28 @@ export function ChatsView() {
           ))}
         </div>
       )}
+
+      {/* Delete conversation confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить чат?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Все сообщения будут удалены безвозвратно. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConversation}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

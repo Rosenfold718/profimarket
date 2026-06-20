@@ -11,8 +11,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   MapPin, Clock, MessageSquare, ArrowLeft, Send, Star,
-  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig
+  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig, Trash2
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface Order {
   id: string; title: string; description: string; status: string
@@ -52,6 +62,8 @@ export function OrderDetailView() {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null)
+  const [deletingMsg, setDeletingMsg] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [tab, setTab] = useState<'info' | 'responses' | 'chat'>(selectedOrderTab as 'info' | 'responses' | 'chat' || 'info')
   const [showResponseForm, setShowResponseForm] = useState(false)
@@ -157,6 +169,25 @@ export function OrderDetailView() {
       addToast('Ошибка отправки', 'error')
     } finally {
       setSending(false)
+    }
+  }
+
+  const deleteMessage = async (msgId: string) => {
+    if (!selectedOrderId) return
+    setDeletingMsg(true)
+    try {
+      const res = await authFetch(`/api/orders/${selectedOrderId}/messages/${msgId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setMessages(prev => prev.filter(m => m.id !== msgId))
+      } else {
+        const d = await res.json()
+        addToast(d.error || 'Ошибка удаления', 'error')
+      }
+    } catch {
+      addToast('Ошибка сети', 'error')
+    } finally {
+      setDeletingMsg(false)
+      setDeleteMsgId(null)
     }
   }
 
@@ -437,11 +468,20 @@ export function OrderDetailView() {
                           return (
                             <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                               <div className={`max-w-[75%] ${isMine ? 'order-2' : ''}`}>
-                                {!isMine && (
-                                  <div className="flex items-center gap-1.5 mb-1">
+                                <div className={`flex items-center gap-1.5 ${isMine ? 'justify-end' : ''}`}>
+                                  {!isMine && (
                                     <span className="text-xs font-medium text-muted-foreground">{msg.sender.name}</span>
-                                  </div>
-                                )}
+                                  )}
+                                  {isMine && (
+                                    <button
+                                      onClick={() => setDeleteMsgId(msg.id)}
+                                      className="p-0.5 rounded text-muted-foreground/50 hover:text-destructive transition-colors"
+                                      aria-label="Удалить сообщение"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
                                 <div className={`rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                                   isMine
                                     ? 'bg-primary text-primary-foreground rounded-br-sm'
@@ -484,6 +524,26 @@ export function OrderDetailView() {
                 </Card>
               </motion.div>
             )}
+
+            {/* Delete message confirmation */}
+            <AlertDialog open={!!deleteMsgId} onOpenChange={(open) => !open && setDeleteMsgId(null)}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Удалить сообщение?</AlertDialogTitle>
+                  <AlertDialogDescription>Сообщение будет удалено безвозвратно.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={deletingMsg}>Отмена</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteMsgId && deleteMessage(deleteMsgId)}
+                    disabled={deletingMsg}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deletingMsg ? 'Удаление...' : 'Удалить'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </AnimatePresence>
         </div>
 
