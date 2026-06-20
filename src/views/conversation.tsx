@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,8 @@ interface Msg {
   sender: { name: string; avatar?: string } | null
 }
 
+const POLL_INTERVAL = 2000
+
 export function ConversationView() {
   const { selectedConversationId, setView, user, addToast } = useAppStore()
   const [messages, setMessages] = useState<Msg[]>([])
@@ -23,29 +25,90 @@ export function ConversationView() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const wasAtBottomRef = useRef(true)
+  const prevCountRef = useRef(0)
+  const messagesRef = useRef<Msg[]>([])
 
-  const loadMessages = async () => {
+  // Keep ref in sync
+  useEffect(() => { messagesRef.current = messages }, [messages])
+
+  const loadMessages = useCallback(async (useSince = false) => {
     if (!selectedConversationId) return
     try {
-      const res = await authFetch(`/api/conversations/${selectedConversationId}/messages`)
+      let url = `/api/conversations/${selectedConversationId}/messages`
+      const currentMsgs = messagesRef.current
+      if (useSince && currentMsgs.length > 0) {
+        const newestTime = currentMsgs[0]?.createdAt
+        if (newestTime) url += `?since=${encodeURIComponent(newestTime)}`
+      }
+
+      const res = await authFetch(url)
       const data = await res.json()
-      setMessages(data.messages || [])
-      // Mark as read
-      authFetch(`/api/conversations/${selectedConversationId}/messages`, { method: 'PATCH' })
+      const fetchedMsgs: Msg[] = data.messages || []
+
+      if (useSince) {
+        if (fetchedMsgs.length > 0) {
+          const existingIds = new Set(currentMsgs.map(m => m.id))
+          const fresh = fetchedMsgs.filter(m => !existingIds.has(m.id))
+          if (fresh.length > 0) {
+            setMessages(prev => {
+              const merged = [...fresh, ...prev]
+              merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              return merged
+            })
+            if (wasAtBottomRef.current) {
+              setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
+            }
+          }
+        }
+      } else {
+        setMessages(fetchedMsgs)
+        authFetch(`/api/conversations/${selectedConversationId}/messages`, { method: 'PATCH' })
+      }
     } catch {
-      addToast('Ошибка загрузки сообщений', 'error')
+      if (!useSince) addToast('Ошибка загрузки сообщений', 'error')
     } finally {
-      setLoading(false)
+      if (!useSince) setLoading(false)
     }
-  }
+  }, [selectedConversationId, addToast])
 
+  // Initial load
   useEffect(() => {
-    loadMessages()
-  }, [selectedConversationId])
+    setMessages([])
+    setLoading(true)
+    loadMessages(false)
+  }, [selectedConversationId, loadMessages])
 
+  // Track scroll position
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const container = bottomRef.current?.parentElement
+    if (!container) return
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      wasAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 60
+    }
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [loading])
+
+  // Scroll on new messages
+  useEffect(() => {
+    if (messages.length > 0 && messages.length !== prevCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: prevCountRef.current === 0 ? 'auto' : 'smooth' })
+    }
+    prevCountRef.current = messages.length
+  }, [messages.length])
+
+  // Polling: check for new messages every 2s (stable reference)
+  useEffect(() => {
+    if (loading || !selectedConversationId) return
+
+    const timer = setInterval(() => {
+      loadMessages(true)
+    }, POLL_INTERVAL)
+
+    return () => clearInterval(timer)
+  }, [selectedConversationId, loading, loadMessages])
 
   const send = async () => {
     if (!text.trim() || sending || !selectedConversationId) return
@@ -58,8 +121,13 @@ export function ConversationView() {
       })
       const data = await res.json()
       if (res.ok) {
-        setMessages(prev => [data.message, ...prev])
+        setMessages(prev => {
+          const merged = [data.message, ...prev]
+          merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          return merged
+        })
         setText('')
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
       } else {
         addToast(data.error || 'Ошибка отправки', 'error')
       }
@@ -106,14 +174,14 @@ export function ConversationView() {
             <p className="text-sm mt-1">Начните переписку</p>
           </div>
         ) : (
-          messages.map((msg, i) => {
+          messages.map((msg) => {
             const isMine = msg.senderId === user?.id
             return (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.01, duration: 0.15 }}
+                transition={{ duration: 0.15 }}
                 className={`flex gap-2.5 ${isMine ? 'flex-row-reverse' : ''}`}
               >
                 {!isMine && (

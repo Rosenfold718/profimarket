@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { messages, conversations, users } from '@/lib/schema'
-import { eq, and, ne, desc } from 'drizzle-orm'
+import { eq, and, ne, desc, sql } from 'drizzle-orm'
 import { getTokenFromHeaders, verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
@@ -20,6 +20,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Не найдено' }, { status: 404 })
   }
 
+  const url = new URL(req.url)
+  const since = url.searchParams.get('since')
+
+  // Build where conditions
+  const conditions = [eq(messages.conversationId, id)]
+  if (since) {
+    conditions.push(sql`${messages.createdAt} > ${since}`)
+  }
+
   const msgs = await db.select({
     id: messages.id,
     content: messages.content,
@@ -30,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   })
   .from(messages)
   .leftJoin(users, eq(messages.senderId, users.id))
-  .where(eq(messages.conversationId, id))
+  .where(and(...conditions))
   .orderBy(desc(messages.createdAt))
 
   return NextResponse.json({ messages: msgs })

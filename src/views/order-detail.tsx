@@ -59,12 +59,60 @@ export function OrderDetailView() {
   const [responseBudget, setResponseBudget] = useState('')
   const [responding, setResponding] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const wasAtBottomRef = useRef(true)
+  const messagesRef = useRef<Message[]>([])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  // Keep ref in sync
+  useEffect(() => { messagesRef.current = messages }, [messages])
+
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' })
   }
 
-  useEffect(() => { scrollToBottom() }, [messages])
+  // Track scroll position in chat
+  useEffect(() => {
+    if (tab !== 'chat') return
+    const container = messagesEndRef.current?.parentElement
+    if (!container) return
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      wasAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 60
+    }
+    container.addEventListener('scroll', handleScroll, { passive: true })
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [tab, loading])
+
+  // Scroll on new messages
+  useEffect(() => { scrollToBottom() }, [messages.length])
+
+  // Poll for new messages when on chat tab
+  useEffect(() => {
+    if (tab !== 'chat' || !selectedOrderId || loading) return
+
+    const timer = setInterval(async () => {
+      const currentMsgs = messagesRef.current
+      if (currentMsgs.length === 0) return
+      const newestTime = currentMsgs[currentMsgs.length - 1]?.createdAt
+      if (!newestTime) return
+      try {
+        const res = await authFetch(`/api/orders/${selectedOrderId}/messages?since=${encodeURIComponent(newestTime)}`)
+        const data = await res.json()
+        const newMsgs: Message[] = data.messages || []
+        if (newMsgs.length > 0) {
+          const existingIds = new Set(currentMsgs.map(m => m.id))
+          const fresh = newMsgs.filter(m => !existingIds.has(m.id))
+          if (fresh.length > 0) {
+            setMessages(prev => [...prev, ...fresh])
+            if (wasAtBottomRef.current) {
+              setTimeout(() => scrollToBottom(), 50)
+            }
+          }
+        }
+      } catch { /* silent */ }
+    }, 2000)
+
+    return () => clearInterval(timer)
+  }, [tab, selectedOrderId, loading])
 
   const loadOrder = useCallback(async () => {
     if (!selectedOrderId) return

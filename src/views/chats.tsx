@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
 import { Card, CardContent } from '@/components/ui/card'
@@ -47,57 +47,67 @@ export function ChatsView() {
   const [items, setItems] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const isFirstLoad = useRef(true)
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [chatsRes, convsRes] = await Promise.all([
-          authFetch('/api/chats'),
-          authFetch('/api/conversations'),
-        ])
-        const chatsData = await chatsRes.json()
-        const convsData = await convsRes.json()
+  const loadChats = useCallback(async () => {
+    try {
+      const [chatsRes, convsRes] = await Promise.all([
+        authFetch('/api/chats'),
+        authFetch('/api/conversations'),
+      ])
+      const chatsData = await chatsRes.json()
+      const convsData = await convsRes.json()
 
-        const orderChats: OrderChat[] = (chatsData.chats || []).map((c: Record<string, unknown>) => ({
-          type: 'order' as const,
-          orderId: c.orderId,
-          title: c.title,
-          status: c.status,
-          city: c.city,
-          categoryName: c.categoryName,
-          interlocutor: c.interlocutor,
-          lastMessage: c.lastMessage,
-          totalMessages: c.totalMessages,
-          unreadCount: c.unreadCount,
+      const orderChats: OrderChat[] = (chatsData.chats || []).map((c: Record<string, unknown>) => ({
+        type: 'order' as const,
+        orderId: c.orderId,
+        title: c.title,
+        status: c.status,
+        city: c.city,
+        categoryName: c.categoryName,
+        interlocutor: c.interlocutor,
+        lastMessage: c.lastMessage,
+        totalMessages: c.totalMessages,
+        unreadCount: c.unreadCount,
         }))
 
-        const directChats: DirectChat[] = (convsData.conversations || []).map((c: Record<string, unknown>) => ({
-          type: 'direct' as const,
-          id: c.id,
-          peer: c.peer,
-          lastMessage: c.lastMessage,
-          updatedAt: c.updatedAt,
-          unreadCount: c.unreadCount,
-        }))
+      const directChats: DirectChat[] = (convsData.conversations || []).map((c: Record<string, unknown>) => ({
+        type: 'direct' as const,
+        id: c.id,
+        peer: c.peer,
+        lastMessage: c.lastMessage,
+        updatedAt: c.updatedAt,
+        unreadCount: c.unreadCount,
+      }))
 
-        // Sort by last activity
-        const all: ChatItem[] = [...orderChats, ...directChats].sort((a, b) => {
-          const timeA = a.type === 'order' ? a.lastMessage?.createdAt : a.updatedAt
-          const timeB = b.type === 'order' ? b.lastMessage?.createdAt : b.updatedAt
-          return new Date(timeB || 0).getTime() - new Date(timeA || 0).getTime()
-        })
+      // Sort by last activity
+      const all: ChatItem[] = [...orderChats, ...directChats].sort((a, b) => {
+        const timeA = a.type === 'order' ? a.lastMessage?.createdAt : a.updatedAt
+        const timeB = b.type === 'order' ? b.lastMessage?.createdAt : b.updatedAt
+        return new Date(timeB || 0).getTime() - new Date(timeA || 0).getTime()
+      })
 
-        setItems(all)
-        const totalUnread = [...orderChats, ...directChats].reduce((sum: number, c: { unreadCount: number }) => sum + c.unreadCount, 0)
-        setUnreadChats(totalUnread)
-      } catch {
-        addToast('Ошибка загрузки чатов', 'error')
-      } finally {
+      setItems(all)
+      const totalUnread = [...orderChats, ...directChats].reduce((sum: number, c: { unreadCount: number }) => sum + c.unreadCount, 0)
+      setUnreadChats(totalUnread)
+    } catch {
+      if (isFirstLoad.current) addToast('Ошибка загрузки чатов', 'error')
+    } finally {
+      if (isFirstLoad.current) {
+        isFirstLoad.current = false
         setLoading(false)
       }
     }
-    load()
   }, [addToast, setUnreadChats])
+
+  // Initial load
+  useEffect(() => { loadChats() }, [loadChats])
+
+  // Periodic refresh for unread counts (every 5s)
+  useEffect(() => {
+    const timer = setInterval(loadChats, 5000)
+    return () => clearInterval(timer)
+  }, [loadChats])
 
   const formatTime = (d: string) => {
     const diff = Date.now() - new Date(d).getTime()

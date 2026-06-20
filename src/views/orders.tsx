@@ -35,9 +35,9 @@ const statusColor = (s: string) => {
 const statusLabel: Record<string, string> = { OPEN: 'Открыт', IN_PROGRESS: 'В работе', COMPLETED: 'Выполнен', CANCELLED: 'Отменён' }
 
 const statusTabs = [
-  { key: 'OPEN', label: 'Открытые', icon: <FolderOpen className="w-4 h-4" /> },
-  { key: 'IN_PROGRESS', label: 'В работе', icon: <Loader className="w-4 h-4" /> },
-  { key: 'COMPLETED', label: 'Выполненные', icon: <CheckCircle2 className="w-4 h-4" /> },
+  { key: 'OPEN', label: 'Открытые', icon: <FolderOpen className="w-4 h-4" />, activeClass: 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25', countClass: 'bg-white/20 text-white' },
+  { key: 'IN_PROGRESS', label: 'В работе', icon: <Loader className="w-4 h-4" />, activeClass: 'bg-amber-600 text-white shadow-sm shadow-amber-600/25', countClass: 'bg-white/20 text-white' },
+  { key: 'COMPLETED', label: 'Выполненные', icon: <CheckCircle2 className="w-4 h-4" />, activeClass: 'bg-slate-600 text-white shadow-sm shadow-slate-600/25', countClass: 'bg-white/20 text-white' },
 ] as const
 
 const formatBudget = (from?: number, to?: number) => {
@@ -132,8 +132,8 @@ export function OrdersView() {
             onClick={() => handleTabChange(tab.key)}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap flex-1 justify-center ${
               statusTab === tab.key
-                ? 'bg-background shadow-sm text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
+                ? tab.activeClass
+                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
             }`}
           >
             {tab.icon}
@@ -141,7 +141,7 @@ export function OrdersView() {
             <span className="lg:hidden">{tab.label.slice(0, -2)}</span>
             {(counts[tab.key] ?? 0) > 0 && (
               <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                statusTab === tab.key ? 'bg-primary/10 text-primary' : 'bg-background/50'
+                statusTab === tab.key ? tab.countClass : 'bg-background/50'
               }`}>
                 {counts[tab.key]}
               </span>

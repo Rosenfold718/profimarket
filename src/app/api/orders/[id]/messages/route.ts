@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { messages, orders } from '@/lib/schema'
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, gt, and } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
@@ -18,8 +18,16 @@ export async function GET(
   if (!payload) return NextResponse.json({ error: 'Токен истёк' }, { status: 401 })
 
   const { id } = await params
+  const url = new URL(req.url)
+  const since = url.searchParams.get('since')
+
+  const whereConditions = [eq(messages.orderId, id)]
+  if (since) {
+    whereConditions.push(gt(messages.createdAt, since))
+  }
+
   const messagesList = await db.query.messages.findMany({
-    where: eq(messages.orderId, id),
+    where: and(...whereConditions),
     with: { sender: { columns: { id: true, name: true, role: true, avatar: true } } },
     orderBy: (messages, { asc }) => [asc(messages.createdAt)],
     limit: 200,
