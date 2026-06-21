@@ -53,13 +53,34 @@ const sounds: Record<SoundType, SoundDefinition> = {
     description: 'Две ноты с плавным переходом, похожий на Slack',
     play: (ctx) => {
       const t = ctx.currentTime
-      const master = ctx.createGain()
-      master.gain.setValueAtTime(0.35, t)
-      master.connect(ctx.destination)
 
-      // Helper: create a soft sine tone with a subtle harmonic shimmer
+      // Low-pass filter rounds off attack transients — removes the "sharp" feeling
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.setValueAtTime(1200, t)
+      filter.frequency.linearRampToValueAtTime(2000, t + 0.15)  // slowly open up
+      filter.frequency.exponentialRampToValueAtTime(600, t + 0.9)  // close gently
+      filter.Q.setValueAtTime(0.5, t)
+
+      // Compressor tames any peaks
+      const comp = ctx.createDynamicsCompressor()
+      comp.threshold.setValueAtTime(-18, t)
+      comp.knee.setValueAtTime(20, t)
+      comp.ratio.setValueAtTime(6, t)
+      comp.attack.setValueAtTime(0.08, t)
+      comp.release.setValueAtTime(0.25, t)
+
+      // Master gain
+      const master = ctx.createGain()
+      master.gain.setValueAtTime(0, t)
+      master.gain.linearRampToValueAtTime(0.28, t + 0.06)  // gentle 60ms fade-in for whole sound
+      master.gain.setValueAtTime(0.28, t + 0.7)
+      master.gain.exponentialRampToValueAtTime(0.0001, t + 1.1)
+
+      filter.connect(comp).connect(master).connect(ctx.destination)
+
+      // Helper: soft sine with octave shimmer, routed through filter
       const softTone = (freq: number, start: number, peakGain: number, peakAt: number, endAt: number) => {
-        // Fundamental — pure sine
         const osc = ctx.createOscillator()
         const g = ctx.createGain()
         osc.type = 'sine'
@@ -67,28 +88,28 @@ const sounds: Record<SoundType, SoundDefinition> = {
         g.gain.setValueAtTime(0, t + start)
         g.gain.linearRampToValueAtTime(peakGain, t + start + peakAt)
         g.gain.exponentialRampToValueAtTime(0.0001, t + start + endAt)
-        osc.connect(g).connect(master)
+        osc.connect(g).connect(filter)
         osc.start(t + start)
         osc.stop(t + start + endAt)
 
-        // Shimmer — quiet octave harmonic for warmth
+        // Shimmer
         const osc2 = ctx.createOscillator()
         const g2 = ctx.createGain()
         osc2.type = 'sine'
         osc2.frequency.setValueAtTime(freq * 2, t + start)
         g2.gain.setValueAtTime(0, t + start)
-        g2.gain.linearRampToValueAtTime(peakGain * 0.15, t + start + peakAt + 0.02)
-        g2.gain.exponentialRampToValueAtTime(0.0001, t + start + endAt * 0.7)
-        osc2.connect(g2).connect(master)
+        g2.gain.linearRampToValueAtTime(peakGain * 0.12, t + start + peakAt + 0.03)
+        g2.gain.exponentialRampToValueAtTime(0.0001, t + start + endAt * 0.6)
+        osc2.connect(g2).connect(filter)
         osc2.start(t + start)
         osc2.stop(t + start + endAt)
       }
 
-      // Note 1: F4 (349 Hz) — warm low tone
-      softTone(349, 0, 0.18, 0.04, 0.55)
+      // Note 1: F4 (349 Hz)
+      softTone(349, 0, 0.22, 0.05, 0.6)
 
-      // Note 2: A4 (440 Hz) — major third up, starts well into note 1's sustain
-      softTone(440, 0.25, 0.16, 0.04, 0.55)
+      // Note 2: A4 (440 Hz) — wide crossfade
+      softTone(440, 0.28, 0.19, 0.05, 0.6)
     },
   },
 }
