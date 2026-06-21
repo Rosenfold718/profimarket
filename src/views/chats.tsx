@@ -115,14 +115,14 @@ function OnlineDot({ lastSeenAt }: { lastSeenAt?: string }) {
 // ─── Read receipt checkmarks ──────────────────────────────────────────────────
 function ReadCheck({ read }: { read: boolean }) {
   if (read) {
-    return <CheckCheck className="w-3.5 h-3.5 text-sky-500" />
+    return <CheckCheck className="w-3 h-3 text-sky-500" />
   }
-  return <Check className="w-3.5 h-3.5 text-muted-foreground/70" />
+  return <Check className="w-3 h-3 text-muted-foreground/70" />
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export function ChatsView() {
-  const { navigateToOrder, setView, user, addToast, setUnreadChats, selectedConversationId } = useAppStore()
+  const { navigateToOrder, setView, user, addToast, setUnreadChats, selectedConversationId, navigateToProfile } = useAppStore()
   const playSound = useNotificationSound()
   const [items, setItems] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -253,8 +253,8 @@ export function ChatsView() {
       {/* ─── Left panel: Chat list (20%) ─────────────────────────────────── */}
       <div className={`${activeConvId ? 'hidden md:flex' : 'flex'} w-full md:w-[20%] md:min-w-[240px] md:max-w-[340px] flex-col border-r bg-card`}>
         {/* Header */}
-        <div className="px-4 py-3 border-b shrink-0">
-          <h2 className="text-lg font-bold font-[family-name:var(--font-display)]">Чаты</h2>
+        <div className="h-14 px-4 flex items-center border-b shrink-0">
+          <h2 className="text-base font-bold font-[family-name:var(--font-display)]">Чаты</h2>
         </div>
         {/* Search */}
         <div className="px-3 py-2 border-b shrink-0">
@@ -287,8 +287,8 @@ export function ChatsView() {
                     className={`w-full text-left px-3 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors ${isActive ? 'bg-muted' : ''} ${item.unreadCount > 0 ? 'bg-primary/[0.03]' : ''}`}
                   >
                     {/* Avatar */}
-                    <div className="relative shrink-0">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm overflow-hidden">
+                    <div className="relative shrink-0 self-center">
+                      <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm overflow-hidden">
                         {peer.avatar ? (
                           <img src={peer.avatar} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -299,40 +299,54 @@ export function ChatsView() {
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <span className="text-sm font-medium truncate">
+                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                      <div className="flex items-baseline justify-between gap-2 min-h-[18px]">
+                        <span className="text-[13px] font-medium truncate leading-tight">
                           {item.type === 'order' ? item.title : peer.name}
                         </span>
-                        <span className="text-[11px] text-muted-foreground shrink-0">
+                        <span className="text-[11px] text-muted-foreground shrink-0 leading-none">
                           {formatTime(item.type === 'order' ? (item.lastMessage?.createdAt || '') : (item.updatedAt || ''))}
                         </span>
                       </div>
-                      {item.type === 'order' && (
-                        <div className="flex items-center gap-1.5 mt-0.5">
+                      {item.type === 'order' ? (
+                        <div className="flex items-center gap-1.5 min-h-[16px]">
                           {item.status && (
-                            <span className={`text-[10px] px-1.5 py-0 rounded ${statusColor[item.status] || 'text-muted-foreground'}`}>
+                            <span className={`text-[10px] px-1.5 py-[1px] rounded leading-none shrink-0 ${statusColor[item.status] || 'text-muted-foreground'}`}>
                               {statusLabel[item.status]}
                             </span>
                           )}
                           <span className="text-[11px] text-muted-foreground truncate">{peer.name}</span>
+                          <span className="text-xs text-muted-foreground truncate">
+                            {item.lastMessage ? (
+                              <span>
+                                {item.lastMessage.isMine && <span className="text-muted-foreground/60">Вы: </span>}
+                                {item.lastMessage.content}
+                              </span>
+                            ) : ''}
+                          </span>
+                          {item.unreadCount > 0 && (
+                            <span className="min-w-[20px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center shrink-0 px-1.5 leading-none">
+                              {item.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-1.5 min-h-[16px]">
+                          <p className="text-xs text-muted-foreground truncate">
+                            {item.lastMessage ? (
+                              <span>
+                                {item.lastMessage.isMine && <span className="text-muted-foreground/60">Вы: </span>}
+                                {item.lastMessage.content}
+                              </span>
+                            ) : 'Нет сообщений'}
+                          </p>
+                          {item.unreadCount > 0 && (
+                            <span className="min-w-[20px] h-[18px] rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center shrink-0 px-1.5 leading-none">
+                              {item.unreadCount}
+                            </span>
+                          )}
                         </div>
                       )}
-                      <div className="flex items-center justify-between gap-1.5 mt-0.5">
-                        <p className="text-xs text-muted-foreground truncate">
-                          {item.lastMessage ? (
-                            <span>
-                              {item.lastMessage.isMine && <span className="text-muted-foreground/60">Вы: </span>}
-                              {item.lastMessage.content}
-                            </span>
-                          ) : 'Нет сообщений'}
-                        </p>
-                        {item.unreadCount > 0 && (
-                          <span className="min-w-[20px] h-5 rounded-full bg-destructive text-destructive-foreground text-[11px] font-bold flex items-center justify-center shrink-0 px-1.5">
-                            {item.unreadCount}
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </button>
                 )
@@ -397,7 +411,7 @@ interface ConversationPanelProps {
 }
 
 function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshChats }: ConversationPanelProps) {
-  const { user, addToast, setUnreadChats } = useAppStore()
+  const { user, addToast, setUnreadChats, navigateToProfile } = useAppStore()
   const playSound = useNotificationSound()
   const [messages, setMessages] = useState<Msg[]>([])
   const [text, setText] = useState('')
@@ -596,26 +610,31 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b shrink-0 bg-background">
+      <div className="flex items-center gap-3 px-4 h-14 border-b shrink-0 bg-background">
         <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden shrink-0">
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div className="relative shrink-0">
-          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm overflow-hidden">
-            {peerInfo.avatar ? (
-              <img src={peerInfo.avatar} alt="" className="w-full h-full object-cover" />
-            ) : (
-              peerInfo.name?.charAt(0) || '?'
-            )}
+        <button
+          onClick={() => navigateToProfile(peer.id)}
+          className="flex items-center gap-2.5 min-w-0 flex-1"
+        >
+          <div className="relative shrink-0">
+            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm overflow-hidden cursor-pointer hover:opacity-80 transition-opacity">
+              {peerInfo.avatar ? (
+                <img src={peerInfo.avatar} alt="" className="w-full h-full object-cover" />
+              ) : (
+                peerInfo.name?.charAt(0) || '?'
+              )}
+            </div>
+            <OnlineDot lastSeenAt={peerInfo.lastSeenAt} />
           </div>
-          <OnlineDot lastSeenAt={peerInfo.lastSeenAt} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold truncate">{peerInfo.name}</p>
-          <p className="text-[11px] text-muted-foreground">
-            {isOnline(peerInfo.lastSeenAt) ? 'В сети' : peerInfo.lastSeenAt ? `Был(а) ${formatTime(peerInfo.lastSeenAt)}` : 'Не в сети'}
-          </p>
-        </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-semibold truncate leading-tight">{peerInfo.name}</p>
+            <p className="text-[11px] text-muted-foreground leading-tight mt-0.5">
+              {isOnline(peerInfo.lastSeenAt) ? 'В сети' : peerInfo.lastSeenAt ? `Был(а) ${formatTime(peerInfo.lastSeenAt)}` : 'Не в сети'}
+            </p>
+          </div>
+        </button>
         <Button
           variant="ghost" size="icon"
           onClick={onDelete}
@@ -650,7 +669,7 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
                 className={`flex gap-2 ${isMine ? 'flex-row-reverse' : ''}`}
               >
                 {!isMine && (
-                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[11px] font-bold shrink-0 overflow-hidden mt-auto">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[11px] font-bold shrink-0 overflow-hidden self-end">
                     {msg.sender?.avatar ? (
                       <img src={msg.sender.avatar} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -717,8 +736,8 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
                     )}
                   </div>
                   {/* Time + read receipt */}
-                  <div className={`flex items-center gap-1 mt-0.5 ${isMine ? 'flex-row-reverse' : ''}`}>
-                    <span className="text-[10px] text-muted-foreground">{formatMsgTime(msg.createdAt)}</span>
+                  <div className={`flex items-center gap-1 mt-0.5 h-4 ${isMine ? 'flex-row-reverse' : ''}`}>
+                    <span className="text-[10px] text-muted-foreground leading-none">{formatMsgTime(msg.createdAt)}</span>
                     {isMine && <ReadCheck read={msg.read} />}
                   </div>
                 </div>
@@ -766,7 +785,7 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
             </div>
           </div>
         )}
-        <div className="flex gap-2 max-w-3xl mx-auto">
+        <div className="flex items-center gap-2 max-w-3xl mx-auto">
           <input
             ref={fileInputRef}
             type="file"
@@ -790,7 +809,7 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            className="h-10 text-sm"
+            className="h-10 text-sm rounded-lg"
             disabled={sending}
           />
           <Button
