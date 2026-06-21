@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { users, profiles } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
+import { trackActivity } from '@/lib/track'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
 import { randomUUID } from 'crypto'
@@ -84,6 +85,9 @@ export async function PUT(req: NextRequest) {
       where: eq(users.id, payload.userId),
       with: { profile: true },
     })
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    trackActivity(payload.userId, 'update_profile', { fields: Object.keys(body) }, ip)
 
     return NextResponse.json({ user: { id: user!.id, name: user!.name, email: user!.email, role: user!.role, phone: user!.phone, avatar: user!.avatar, profile: user!.profile } })
   } catch (e: unknown) {

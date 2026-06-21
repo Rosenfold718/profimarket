@@ -41,6 +41,7 @@ interface ChatPreview {
   lastTime: string
   unread: number
   interlocutorName: string
+  isMine: boolean
 }
 
 export function DashboardView() {
@@ -71,13 +72,14 @@ export function DashboardView() {
         setUnreadChats(totalUnread)
 
         // Build chat previews from real data
-        const previews: ChatPreview[] = chats.slice(0, 4).map((c: { orderId: string; title: string; lastMessage: { content: string; createdAt: string }; unreadCount: number; interlocutor: { name: string } }) => ({
+        const previews: ChatPreview[] = chats.slice(0, 4).map((c: { orderId: string; title: string; lastMessage: { content: string; createdAt: string; isMine: boolean; senderName?: string }; unreadCount: number; interlocutor: { name: string } }) => ({
           orderId: c.orderId,
           title: c.title,
           lastMessage: c.lastMessage?.content || '',
           lastTime: c.lastMessage?.createdAt || '',
           unread: c.unreadCount,
           interlocutorName: c.interlocutor?.name || '',
+          isMine: c.lastMessage?.isMine || false,
         }))
         setChatPreviews(previews)
       } catch {
@@ -243,7 +245,10 @@ export function DashboardView() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate">{chat.title}</p>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{chat.interlocutorName}: {chat.lastMessage}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          <span className="text-muted-foreground/60">{chat.isMine ? 'Вы' : chat.interlocutorName}: </span>
+                          {chat.lastMessage}
+                        </p>
                       </div>
                       <div className="shrink-0 flex flex-col items-end gap-1">
                         <span className="text-[11px] text-muted-foreground">{formatTime(chat.lastTime)}</span>

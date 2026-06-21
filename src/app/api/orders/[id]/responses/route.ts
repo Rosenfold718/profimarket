@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { responses, orders } from '@/lib/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
+import { trackActivity } from '@/lib/track'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
 import { randomUUID } from 'crypto'
@@ -63,6 +64,9 @@ export async function POST(
       with: { executor: { columns: { id: true, name: true, role: true }, with: { profile: true } } },
     })
 
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    trackActivity(payload.userId, 'send_response', { orderId: id, responseId: response.id }, ip)
+
     return NextResponse.json({ response: responseWithExecutor }, { status: 201 })
   } catch (e: unknown) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: e.issues[0].message }, { status: 400 })
@@ -106,6 +110,10 @@ export async function PATCH(
       .set({ status: 'IN_PROGRESS', executorId: responseWithExecutor.executorId, updatedAt: new Date().toISOString() })
       .where(eq(orders.id, orderId))
   }
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+  const actionName = status === 'ACCEPTED' ? 'accept_response' : 'reject_response'
+  trackActivity(payload.userId, actionName, { orderId, responseId, status }, ip)
 
   return NextResponse.json({ response: responseWithExecutor })
 }

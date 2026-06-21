@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { orders, users, categories, responses, messages } from '@/lib/schema'
 import { eq, and, or, desc, sql, count, like, inArray } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
+import { trackActivity } from '@/lib/track'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
 import { randomUUID } from 'crypto'
@@ -211,6 +212,9 @@ export async function POST(req: NextRequest) {
       createdAt: now,
       updatedAt: now,
     }).returning()
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    trackActivity(payload.userId, 'create_order', { orderId: order.id, title: data.title }, ip)
 
     return NextResponse.json({ order }, { status: 201 })
   } catch (e: unknown) {

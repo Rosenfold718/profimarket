@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { messages, users } from '@/lib/schema'
 import { eq, asc, gt, and, ne } from 'drizzle-orm'
 import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
+import { trackActivity } from '@/lib/track'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
 import { randomUUID } from 'crypto'
@@ -122,6 +123,9 @@ export async function POST(
     }).returning()
 
     const messageWithSender = { ...message, sender: sender || { id: payload.userId, name: 'Вы', role: 'USER', avatar: null } }
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+    trackActivity(payload.userId, 'send_message', { orderId: id, messageId: message.id }, ip)
 
     return NextResponse.json({ message: messageWithSender }, { status: 201 })
   } catch (e: unknown) {

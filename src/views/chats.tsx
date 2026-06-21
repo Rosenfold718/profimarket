@@ -319,7 +319,7 @@ export function ChatsView() {
                           <span className="text-xs text-muted-foreground truncate">
                             {item.lastMessage ? (
                               <span>
-                                {item.lastMessage.isMine && <span className="text-muted-foreground/60">Вы: </span>}
+                                <span className="text-muted-foreground/60">{item.lastMessage.isMine ? 'Вы' : peer.name}: </span>
                                 {item.lastMessage.content}
                               </span>
                             ) : ''}
@@ -335,7 +335,7 @@ export function ChatsView() {
                           <p className="text-xs text-muted-foreground truncate">
                             {item.lastMessage ? (
                               <span>
-                                {item.lastMessage.isMine && <span className="text-muted-foreground/60">Вы: </span>}
+                                <span className="text-muted-foreground/60">{item.lastMessage.isMine ? 'Вы' : item.peer.name}: </span>
                                 {item.lastMessage.content}
                               </span>
                             ) : 'Нет сообщений'}
