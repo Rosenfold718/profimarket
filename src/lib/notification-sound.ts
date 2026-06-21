@@ -47,12 +47,36 @@ const sounds: Record<SoundType, SoundDefinition> = {
     },
   },
 
-  // ─── Variant 3: Subtle ding (like Slack) ────────────────────────────────
+  // ─── Variant 3: Soft two-note signal (Slack-inspired) ───────────────────
   ding: {
     name: 'Приглушённый сигнал',
-    description: 'Мягкий одиночный тон, похожий на Slack',
+    description: 'Две ноты с плавным переходом, похожий на Slack',
     play: (ctx) => {
-      createOsc(ctx, 'triangle', 792, 0, 0.3, 0.12)
+      // Note 1: C5 — warm low tone, fades gently
+      const o1 = ctx.createOscillator()
+      const g1 = ctx.createGain()
+      o1.type = 'sine'
+      o1.frequency.setValueAtTime(523, ctx.currentTime)
+      g1.gain.setValueAtTime(0, ctx.currentTime)
+      g1.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.015)
+      g1.gain.setValueAtTime(0.1, ctx.currentTime + 0.12)
+      g1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35)
+      o1.connect(g1).connect(ctx.destination)
+      o1.start(ctx.currentTime)
+      o1.stop(ctx.currentTime + 0.35)
+
+      // Note 2: G5 — higher tone, starts before note 1 fully fades for smooth crossfade
+      const o2 = ctx.createOscillator()
+      const g2 = ctx.createGain()
+      o2.type = 'sine'
+      o2.frequency.setValueAtTime(784, ctx.currentTime + 0.14)
+      g2.gain.setValueAtTime(0, ctx.currentTime + 0.14)
+      g2.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 0.155)
+      g2.gain.setValueAtTime(0.09, ctx.currentTime + 0.28)
+      g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55)
+      o2.connect(g2).connect(ctx.destination)
+      o2.start(ctx.currentTime + 0.14)
+      o2.stop(ctx.currentTime + 0.55)
     },
   },
 }
