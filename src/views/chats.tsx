@@ -12,7 +12,7 @@ import {
   FileText, Download, X, ArrowLeft, Check, CheckCheck,
   MapPin, Image as ImageIcon,
 } from 'lucide-react'
-import { playNotificationSound } from '@/lib/notification-sound'
+import { useNotificationSound } from '@/lib/notification-sound'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -123,6 +123,7 @@ function ReadCheck({ read }: { read: boolean }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 export function ChatsView() {
   const { navigateToOrder, setView, user, addToast, setUnreadChats, selectedConversationId } = useAppStore()
+  const playSound = useNotificationSound()
   const [items, setItems] = useState<ChatItem[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -153,13 +154,15 @@ export function ChatsView() {
             const prev = prevItems.find(p => p.id === c.id)
             return (c.unreadCount || 0) > (prev?.unreadCount || 0) && c.id !== activeConvId
           })
-          if (hasNewUnread) playNotificationSound()
+          if (hasNewUnread) playSound()
         }
       }
       setItems(chats)
       itemsRef.current = chats
-      const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
-      setUnreadChats(totalUnread)
+      // Exclude active conversation's unread from total — user is viewing it
+      const activeUnread = chats.find(c => c.type === 'direct' && c.id === activeConvId)?.unreadCount || 0
+      const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0) - activeUnread
+      setUnreadChats(Math.max(0, totalUnread))
     } catch {
       if (isFirstLoad.current) addToast('Ошибка загрузки чатов', 'error')
     } finally {
@@ -168,7 +171,7 @@ export function ChatsView() {
         setLoading(false)
       }
     }
-  }, [addToast, setUnreadChats, activeConvId])
+  }, [addToast, setUnreadChats, activeConvId, playSound])
 
   useEffect(() => { loadChats() }, [loadChats])
   useEffect(() => {
@@ -181,9 +184,11 @@ export function ChatsView() {
     if (item.type === 'order') {
       navigateToOrder(item.orderId!, 'chat')
     } else {
-      // Immediately clear this conversation's unread count from badge
+      // Immediately clear this conversation's unread count from badge and list
       if (item.unreadCount > 0) {
         setUnreadChats(Math.max(0, useAppStore.getState().unreadChats - item.unreadCount))
+        setItems(prev => prev.map(c => c.id === item.id ? { ...c, unreadCount: 0 } : c))
+        itemsRef.current = itemsRef.current.map(c => c.id === item.id ? { ...c, unreadCount: 0 } : c)
       }
       setActiveConvId(item.id!)
     }
@@ -196,10 +201,12 @@ export function ChatsView() {
       const item = items.find(i => i.type === 'direct' && i.id === selectedConversationId)
       if (item && item.unreadCount > 0) {
         setUnreadChats(Math.max(0, useAppStore.getState().unreadChats - item.unreadCount))
+        setItems(prev => prev.map(c => c.id === selectedConversationId ? { ...c, unreadCount: 0 } : c))
+        itemsRef.current = itemsRef.current.map(c => c.id === selectedConversationId ? { ...c, unreadCount: 0 } : c)
       }
       setActiveConvId(selectedConversationId)
     }
-  }, [selectedConversationId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedConversationId])
 
   const handleDeleteConversation = async () => {
     if (!deleteTarget) return
@@ -391,6 +398,7 @@ interface ConversationPanelProps {
 
 function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshChats }: ConversationPanelProps) {
   const { user, addToast, setUnreadChats } = useAppStore()
+  const playSound = useNotificationSound()
   const [messages, setMessages] = useState<Msg[]>([])
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -434,7 +442,7 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
           if (fresh.length > 0) {
             // Play sound for messages from others
             const fromOthers = fresh.filter(m => m.senderId !== user?.id)
-            if (fromOthers.length > 0) playNotificationSound()
+            if (fromOthers.length > 0) playSound()
             updateMessages(prev => {
               const merged = [...prev, ...fresh].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
               messagesRef.current = merged
@@ -467,7 +475,7 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
     } finally {
       if (!useSince) setLoading(false)
     }
-  }, [conversationId, addToast, setUnreadChats, updateMessages, onRefreshChats, user?.id])
+  }, [conversationId, addToast, setUnreadChats, updateMessages, onRefreshChats, user?.id, playSound])
 
   // Initial load
   useEffect(() => {
@@ -475,7 +483,7 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
     setLoading(true)
     setPeerInfo(peer)
     loadMessages(false)
-  }, [conversationId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [conversationId])
 
   // Track scroll position
   useEffect(() => {
@@ -664,7 +672,6 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
                     {/* Image attachment preview */}
                     {msg.attachmentUrl && isImageType(msg.attachmentType) && (
                       <a href={msg.attachmentUrl} target="_blank" rel="noopener noreferrer" className="block mb-2 -mx-1 -mt-1">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={msg.attachmentUrl}
                           alt={msg.attachmentName || 'Изображение'}
@@ -749,7 +756,6 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
             <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm">
               <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
               {attachedFile.type.startsWith('image/') && (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img src={URL.createObjectURL(attachedFile)} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
               )}
               <span className="flex-1 truncate">{attachedFile.name}</span>

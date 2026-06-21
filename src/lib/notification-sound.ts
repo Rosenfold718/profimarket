@@ -5,6 +5,8 @@ import { useCallback, useRef } from 'react'
 
 type SoundType = 'chime' | 'pop' | 'ding'
 
+const DEFAULT_SOUND: SoundType = 'ding'
+
 interface SoundDefinition {
   name: string
   description: string
@@ -69,36 +71,41 @@ function getAudioCtx() {
   return audioCtx
 }
 
-/** Play a notification sound by type */
-export function playNotificationSound(type: SoundType) {
+/** Get the user's preferred sound type (defaults to 'ding') */
+function getEffectiveSound(): SoundType {
   try {
+    const pref = localStorage.getItem('pm_sound')
+    if (pref && pref !== 'off' && pref in sounds) return pref as SoundType
+  } catch { /* ignore */ }
+  return DEFAULT_SOUND
+}
+
+/** Play a notification sound, respecting user preference.
+ *  Can be called with no args — will use the saved preference or default 'ding'. */
+export function playNotificationSound(type?: SoundType) {
+  try {
+    if (!type) type = getEffectiveSound()
     const ctx = getAudioCtx()
     sounds[type].play(ctx)
   } catch { /* audio not supported */ }
 }
 
-/** Play a notification sound, respecting user preference */
+/** Play a notification sound with rate-limiting, respecting user preference */
 export function useNotificationSound() {
   const lastPlayedRef = useRef(0)
 
-  const play = useCallback((type: SoundType = 'chime') => {
+  const play = useCallback(() => {
     // Don't play more than once per second
     const now = Date.now()
     if (now - lastPlayedRef.current < 1000) return
     lastPlayedRef.current = now
 
-    // Check preference
+    // Check if sound is explicitly disabled
     try {
-      const pref = localStorage.getItem('pm_sound')
-      if (pref === 'off' || pref === null) return
-      if (pref !== type) {
-        // User has a different sound selected, play theirs
-        playNotificationSound(pref as SoundType)
-        return
-      }
+      if (localStorage.getItem('pm_sound') === 'off') return
     } catch { /* ignore */ }
 
-    playNotificationSound(type)
+    playNotificationSound()
   }, [])
 
   return play
@@ -106,16 +113,12 @@ export function useNotificationSound() {
 
 export function isSoundEnabled(): boolean {
   try {
-    return localStorage.getItem('pm_sound') !== 'off' && localStorage.getItem('pm_sound') !== null
-  } catch { return false }
+    return localStorage.getItem('pm_sound') !== 'off'
+  } catch { return true }
 }
 
-export function getSelectedSound(): SoundType | null {
-  try {
-    const s = localStorage.getItem('pm_sound')
-    if (s && s !== 'off' && s in sounds) return s as SoundType
-    return null
-  } catch { return null }
+export function getSelectedSound(): SoundType {
+  return getEffectiveSound()
 }
 
 export function setSoundPreference(type: SoundType | 'off') {
