@@ -134,8 +134,6 @@ export async function GET(req: NextRequest) {
         }).from(messages).where(eq(messages.conversationId, conv.id)).orderBy(desc(messages.createdAt)).limit(1),
       ])
 
-      if (!lastMsg[0]) continue
-
       const [unreadRes] = await db.select({ count: sql<number>`count(*)` })
         .from(messages)
         .where(and(eq(messages.conversationId, conv.id), ne(messages.senderId, userId), eq(messages.read, false)))
@@ -144,11 +142,11 @@ export async function GET(req: NextRequest) {
         type: 'direct',
         id: conv.id,
         peer: peer[0] ? { ...peer[0], lastSeenAt: peer[0].lastSeenAt ?? undefined } : { id: peerId, name: 'Удалённый пользователь', avatar: undefined, lastSeenAt: undefined },
-        lastMessage: {
+        lastMessage: lastMsg[0] ? {
           content: lastMsg[0].content,
           createdAt: lastMsg[0].createdAt,
           isMine: lastMsg[0].senderId === userId,
-        },
+        } : null,
         updatedAt: conv.updatedAt,
         unreadCount: Number(unreadRes?.count || 0),
       })
