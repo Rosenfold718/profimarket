@@ -307,15 +307,19 @@ export function ChatsView() {
 
       {/* ─── Right panel: Conversation (80%) ─────────────────────────────── */}
       <div className={`${!activeConvId ? 'hidden md:flex' : 'flex'} flex-1 flex-col min-w-0`}>
-        {activeConvId ? (
+        {activeConvId && activePeer ? (
           <ConversationPanel
             key={activeConvId}
             conversationId={activeConvId}
-            peer={activePeer!}
+            peer={activePeer}
             onBack={() => setActiveConvId(null)}
             onDelete={() => setDeleteTarget({ type: 'direct', id: activeConvId })}
             onRefreshChats={loadChats}
           />
+        ) : activeConvId ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <div className="text-center">
