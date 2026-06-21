@@ -1,12 +1,11 @@
 import { db } from '@/lib/db'
-import { users } from '@/lib/schema'
 import { getTokenFromHeaders, verifyToken } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { sql, count, eq, and, desc } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 
 // Ensure the ActivityLog table exists
 async function ensureTable() {
-  await db.run(sql`
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ActivityLog (
       id TEXT PRIMARY KEY,
       userId TEXT NOT NULL,
@@ -40,32 +39,26 @@ export async function GET(req: NextRequest) {
     const action = url.searchParams.get('action') || undefined
     const offset = (page - 1) * limit
 
-    // Build conditions
-    const conditions: string[] = ['1=1']
-    const params: Record<string, unknown> = {}
-    if (userId) {
-      conditions.push('al.userId = @userId')
-      params.userId = userId
-    }
-    if (action) {
-      conditions.push('al.action = @action')
-      params.action = action
-    }
-    const whereClause = conditions.join(' AND ')
+    // Build WHERE clause with proper parameterization
+    let whereSql = sql`1=1`
+    if (userId) whereSql = sql`${whereSql} AND al.userId = ${userId}`
+    if (action) whereSql = sql`${whereSql} AND al.action = ${action}`
 
     // Total count
-    const [totalResult] = await db.run(sql`SELECT COUNT(*) as cnt FROM ActivityLog al WHERE ${sql.raw(whereClause)}`) as Array<{ cnt: number }>
-    const total = totalResult?.cnt || 0
+    const countResult = await db.execute(sql`SELECT COUNT(*) as cnt FROM ActivityLog al WHERE ${whereSql}`)
+    const total = (countResult.rows[0] as { cnt: number } | undefined)?.cnt || 0
 
     // Fetch activity entries with user names
-    const rows = await db.run(sql`
+    const result = await db.execute(sql`
       SELECT al.*, u.name as userName, u.email as userEmail
       FROM ActivityLog al
       LEFT JOIN User u ON al.userId = u.id
-      WHERE ${sql.raw(whereClause)}
+      WHERE ${whereSql}
       ORDER BY al.createdAt DESC
       LIMIT ${limit} OFFSET ${offset}
-    `) as Array<{
+    `)
+
+    const rows = result.rows as Array<{
       id: string
       userId: string
       action: string
@@ -137,7 +130,7 @@ export async function POST(req: NextRequest) {
 
     const id = crypto.randomUUID().replace(/-/g, '').slice(0, 32)
 
-    await db.run(sql`
+    await db.execute(sql`
       INSERT OR IGNORE INTO ActivityLog (id, userId, action, details, ip, createdAt)
       VALUES (${id}, ${userId}, ${action}, ${details ? JSON.stringify(details) : null}, ${ip || 'unknown'}, ${new Date().toISOString()})
     `)

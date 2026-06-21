@@ -37,7 +37,7 @@ export async function GET(
     }> = []
 
     // 1. Order-based conversations (orders where user is client or executor with messages)
-    const orderRows = await db.run(sql`
+    const orderResult = await db.execute(sql`
       SELECT o.id, o.title, o.updatedAt,
              (SELECT COUNT(*) FROM Message m WHERE m.orderId = o.id) as msgCount,
              (SELECT m2.content FROM Message m2 WHERE m2.orderId = o.id ORDER BY m2.createdAt DESC LIMIT 1) as lastMsg
@@ -45,7 +45,8 @@ export async function GET(
       WHERE (o.clientId = ${userId} OR o.executorId = ${userId})
         AND EXISTS (SELECT 1 FROM Message m WHERE m.orderId = o.id)
       ORDER BY o.updatedAt DESC
-    `) as Array<{ id: string; title: string; updatedAt: string; msgCount: number; lastMsg: string | null }>
+    `)
+    const orderRows = orderResult.rows as Array<{ id: string; title: string; updatedAt: string; msgCount: number; lastMsg: string | null }>
 
     for (const r of orderRows) {
       result.push({
