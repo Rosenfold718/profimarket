@@ -73,9 +73,9 @@ const sounds: Record<SoundType, SoundDefinition> = {
       // Master gain
       const master = ctx.createGain()
       master.gain.setValueAtTime(0, t)
-      master.gain.linearRampToValueAtTime(0.28, t + 0.06)  // gentle 60ms fade-in for whole sound
-      master.gain.setValueAtTime(0.28, t + 0.7)
-      master.gain.exponentialRampToValueAtTime(0.0001, t + 1.1)
+      master.gain.linearRampToValueAtTime(0.14, t + 0.06)  // very quiet
+      master.gain.setValueAtTime(0.14, t + 0.7)
+      master.gain.exponentialRampToValueAtTime(0.0001, t + 0.9)
 
       filter.connect(comp).connect(master).connect(ctx.destination)
 
@@ -106,10 +106,10 @@ const sounds: Record<SoundType, SoundDefinition> = {
       }
 
       // Note 1: F4 (349 Hz)
-      softTone(349, 0, 0.22, 0.05, 0.6)
+      softTone(349, 0, 0.22, 0.05, 0.45)
 
       // Note 2: A4 (440 Hz) — wide crossfade
-      softTone(440, 0.28, 0.19, 0.05, 0.6)
+      softTone(440, 0.22, 0.19, 0.05, 0.45)
     },
   },
 }
