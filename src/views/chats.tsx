@@ -12,6 +12,7 @@ import {
   FileText, Download, X, ArrowLeft, Check, CheckCheck,
   MapPin, Image as ImageIcon,
 } from 'lucide-react'
+import { playNotificationSound } from '@/lib/notification-sound'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -128,14 +129,13 @@ export function ChatsView() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'direct'; id: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const isFirstLoad = useRef(true)
+  const itemsRef = useRef<ChatItem[]>([])
 
   // Which conversation is currently open in the right panel
   const [activeConvId, setActiveConvId] = useState<string | null>(selectedConversationId)
 
-  // Sync with store
-  useEffect(() => {
-    if (selectedConversationId) setActiveConvId(selectedConversationId)
-  }, [selectedConversationId])
+  // Sync with store — handled in the effect above
+  // (kept for reference but logic moved to the combined effect)
 
   // ─── Load chat list ────────────────────────────────────────────────────────
   const loadChats = useCallback(async () => {
@@ -143,7 +143,21 @@ export function ChatsView() {
       const res = await authFetch('/api/chats')
       const data = await res.json()
       const chats: ChatItem[] = data.chats || []
+      // Play sound if new unread messages appeared (only after first load)
+      if (!isFirstLoad.current) {
+        const prevItems = itemsRef.current
+        const prevTotal = prevItems.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
+        const newTotal = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
+        if (newTotal > prevTotal) {
+          const hasNewUnread = chats.some(c => {
+            const prev = prevItems.find(p => p.id === c.id)
+            return (c.unreadCount || 0) > (prev?.unreadCount || 0) && c.id !== activeConvId
+          })
+          if (hasNewUnread) playNotificationSound()
+        }
+      }
       setItems(chats)
+      itemsRef.current = chats
       const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
       setUnreadChats(totalUnread)
     } catch {
@@ -154,7 +168,7 @@ export function ChatsView() {
         setLoading(false)
       }
     }
-  }, [addToast, setUnreadChats])
+  }, [addToast, setUnreadChats, activeConvId])
 
   useEffect(() => { loadChats() }, [loadChats])
   useEffect(() => {
@@ -167,9 +181,25 @@ export function ChatsView() {
     if (item.type === 'order') {
       navigateToOrder(item.orderId!, 'chat')
     } else {
+      // Immediately clear this conversation's unread count from badge
+      if (item.unreadCount > 0) {
+        setUnreadChats(Math.max(0, useAppStore.getState().unreadChats - item.unreadCount))
+      }
       setActiveConvId(item.id!)
     }
   }
+
+  // Also handle opening conversation from profile (selectedConversationId)
+  useEffect(() => {
+    if (selectedConversationId && !activeConvId) {
+      // Find the item in the chat list to get its unread count
+      const item = items.find(i => i.type === 'direct' && i.id === selectedConversationId)
+      if (item && item.unreadCount > 0) {
+        setUnreadChats(Math.max(0, useAppStore.getState().unreadChats - item.unreadCount))
+      }
+      setActiveConvId(selectedConversationId)
+    }
+  }, [selectedConversationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDeleteConversation = async () => {
     if (!deleteTarget) return
@@ -402,6 +432,9 @@ function ConversationPanel({ conversationId, peer, onBack, onDelete, onRefreshCh
           const existingIds = new Set(messagesRef.current.map(m => m.id))
           const fresh = fetchedMsgs.filter(m => !existingIds.has(m.id))
           if (fresh.length > 0) {
+            // Play sound for messages from others
+            const fromOthers = fresh.filter(m => m.senderId !== user?.id)
+            if (fromOthers.length > 0) playNotificationSound()
             updateMessages(prev => {
               const merged = [...prev, ...fresh].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
               messagesRef.current = merged

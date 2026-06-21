@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
+import { uploadFileChunked } from '@/lib/upload'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -109,18 +110,12 @@ export function CreateOrderView() {
 
       const orderId = data.order?.id
       if (orderId && pendingFiles.length > 0) {
-        // Upload documents one by one
         let uploaded = 0
         for (const file of pendingFiles) {
           try {
-            const formData = new FormData()
-            formData.append('file', file)
-            const docRes = await authFetch(`/api/orders/${orderId}/documents`, {
-              method: 'POST',
-              body: formData,
-            })
-            if (docRes.ok) uploaded++
-          } catch { /* skip failed uploads */ }
+            await uploadFileChunked(orderId, file)
+            uploaded++
+          } catch { /* skip failed */ }
         }
         if (uploaded > 0) {
           addToast(`Заказ создан! Загружено ${uploaded} из ${pendingFiles.length} документов`, 'success')

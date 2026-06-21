@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { motion } from 'framer-motion'
-import { Save, Loader2, User, Building, Phone, Globe, Award, GraduationCap, MapPin, Camera, X } from 'lucide-react'
+import { Save, Loader2, User, Building, Phone, Globe, Award, GraduationCap, MapPin, Camera, X, Volume2, VolumeX } from 'lucide-react'
+import { soundTypes, soundMeta, playNotificationSound, isSoundEnabled, getSelectedSound, setSoundPreference } from '@/lib/notification-sound'
 
 const SPECIALIZATIONS = [
   'Сметное дело', 'Строительная экспертиза', 'Проектирование', 'Кадастр',
@@ -267,6 +268,50 @@ export function ProfileEditView() {
               Сохранить изменения
             </Button>
           </div>
+
+          {/* ─── Sound settings ──────────────────────────────────── */}
+          <Card className="border bg-card mt-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Volume2 className="w-4 h-4" />
+                Уведомления
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-3">
+              <p className="text-xs text-muted-foreground">Звук при получении нового сообщения</p>
+              <div className="flex flex-wrap gap-2">
+                {soundTypes.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => { setSoundPreference(type); playNotificationSound(type) }}
+                    className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                      getSelectedSound() === type
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border hover:border-primary/40 text-muted-foreground'
+                    }`}
+                  >
+                    {soundMeta[type].name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setSoundPreference('off')}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all flex items-center gap-1.5 ${
+                    !isSoundEnabled()
+                      ? 'border-destructive/50 bg-destructive/5 text-destructive'
+                      : 'border-border hover:border-destructive/40 text-muted-foreground'
+                  }`}
+                >
+                  <VolumeX className="w-3.5 h-3.5" />
+                  Выкл
+                </button>
+              </div>
+              {soundTypes.map((type) => (
+                getSelectedSound() === type && (
+                  <p key={type} className="text-[11px] text-muted-foreground">{soundMeta[type].description}</p>
+                )
+              ))}
+            </CardContent>
+          </Card>
         </div>
       </motion.div>
     </div>

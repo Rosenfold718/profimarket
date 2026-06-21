@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
+import { uploadFileChunked } from '@/lib/upload'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -79,6 +80,7 @@ export function OrderDetailView() {
 
   // Document upload state
   const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null)
   const [deletingDoc, setDeletingDoc] = useState(false)
   const docInputRef = useRef<HTMLInputElement>(null)
@@ -127,24 +129,16 @@ export function OrderDetailView() {
   const uploadDocument = async (file: File) => {
     if (!selectedOrderId) return
     setUploadingDoc(true)
+    setUploadProgress(0)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const res = await authFetch(`/api/orders/${selectedOrderId}/documents`, {
-        method: 'POST',
-        body: formData,
-      })
-      if (!res.ok) {
-        const d = await res.json()
-        addToast(d.error || 'Ошибка загрузки', 'error')
-      } else {
-        addToast('Документ загружен', 'success')
-        loadDocuments(selectedOrderId)
-      }
-    } catch {
-      addToast('Ошибка загрузки', 'error')
+      await uploadFileChunked(selectedOrderId, file, (pct) => setUploadProgress(pct))
+      addToast('Документ загружен', 'success')
+      loadDocuments(selectedOrderId)
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : 'Ошибка загрузки', 'error')
     } finally {
       setUploadingDoc(false)
+      setUploadProgress(0)
     }
   }
 
@@ -476,8 +470,13 @@ export function OrderDetailView() {
                       ) : (
                         <Upload className="w-4 h-4" />
                       )}
-                      {uploadingDoc ? 'Загрузка...' : 'Загрузить документ'}
+                      {uploadingDoc ? `Загрузка ${uploadProgress}%...` : 'Загрузить документ'}
                     </Button>
+                    {uploadingDoc && (
+                      <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary transition-all duration-300 rounded-full" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    )}
                     <p className="text-xs text-muted-foreground mt-1.5">Макс. 10 МБ · PDF, DOC, XLS, изображения, архивы</p>
                   </div>
                 )}
