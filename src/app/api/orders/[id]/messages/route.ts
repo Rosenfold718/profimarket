@@ -5,14 +5,13 @@ import { verifyToken, getTokenFromHeaders } from '@/lib/auth'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod/v4'
 import { randomUUID } from 'crypto'
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
 
-const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads', 'chat-attachments')
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
 
-async function ensureUploadDir() {
-  await mkdir(UPLOAD_DIR, { recursive: true })
+async function fileToDataUrl(file: File): Promise<string> {
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const base64 = buffer.toString('base64')
+  return `data:${file.type || 'application/octet-stream'};base64,${base64}`
 }
 
 // GET messages for an order
@@ -88,16 +87,8 @@ export async function POST(
         if (file.size > MAX_FILE_SIZE) {
           return NextResponse.json({ error: 'Файл слишком большой (макс. 10 МБ)' }, { status: 400 })
         }
-        await ensureUploadDir()
-        const uuid = randomUUID()
-        const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : ''
-        const savedName = `${uuid}${ext}`
-        const filePath = join(UPLOAD_DIR, savedName)
-
-        const bytes = await file.arrayBuffer()
-        await writeFile(filePath, new Uint8Array(bytes))
-
-        attachmentUrl = `/uploads/chat-attachments/${savedName}`
+        const dataUrl = await fileToDataUrl(file)
+        attachmentUrl = dataUrl
         attachmentName = file.name
         attachmentType = file.type || 'application/octet-stream'
         attachmentSize = file.size

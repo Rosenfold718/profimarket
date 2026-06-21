@@ -7,9 +7,10 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Briefcase, FileText, MessageSquare, User, Users, Menu, LogOut,
-  PlusCircle, ChevronRight, X, Building2, ClipboardList, UserCircle, Shield
+  PlusCircle, ChevronRight, X, Building2, ClipboardList, UserCircle, Shield, Moon, Sun
 } from 'lucide-react'
 import { type View } from '@/stores/use-app-store'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 const navItems: Array<{ view: View; label: string; icon: React.ReactNode; roles?: string[]; badge?: boolean }> = [
   { view: 'dashboard', label: 'Панель управления', icon: <LayoutDashboard className="w-5 h-5" /> },
@@ -175,6 +176,7 @@ export function AppHeader() {
         <div className="flex-1" />
 
         {/* Profile avatar */}
+        <ThemeToggle />
         <button
           onClick={() => useAppStore.getState().setView('profile-edit')}
           className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm hover:opacity-80 transition-opacity overflow-hidden shrink-0"

@@ -17,21 +17,25 @@ export async function GET(req: NextRequest) {
   if (!payload) return NextResponse.json({ error: 'Неверный токен' }, { status: 401 })
 
   const userId = payload.userId
+  const isAdmin = payload.role === 'ADMIN'
 
   try {
-    // ─── 1. Order chats (orders where user is client/executor and has messages) ───
-    const userOrders = await db.select({
-      id: orders.id,
-      title: orders.title,
-      status: orders.status,
-      city: orders.city,
-      clientId: orders.clientId,
-      executorId: orders.executorId,
-      categoryId: orders.categoryId,
-      updatedAt: orders.updatedAt,
-    })
-    .from(orders)
-    .where(or(eq(orders.clientId, userId), eq(orders.executorId, userId)))
+    // ─── 1. Order chats ───
+    const orderWhere = isAdmin
+      ? undefined
+      : or(eq(orders.clientId, userId), eq(orders.executorId, userId))
+
+    const userOrders = isAdmin
+      ? await db.select({
+          id: orders.id, title: orders.title, status: orders.status,
+          city: orders.city, clientId: orders.clientId, executorId: orders.executorId,
+          categoryId: orders.categoryId, updatedAt: orders.updatedAt,
+        }).from(orders)
+      : await db.select({
+          id: orders.id, title: orders.title, status: orders.status,
+          city: orders.city, clientId: orders.clientId, executorId: orders.executorId,
+          categoryId: orders.categoryId, updatedAt: orders.updatedAt,
+        }).from(orders).where(orderWhere!)
 
     const orderChats = []
     for (const order of userOrders) {
@@ -62,9 +66,11 @@ export async function GET(req: NextRequest) {
       .from(messages)
       .where(eq(messages.orderId, order.id))
 
-      // Determine interlocutor
+      // Determine interlocutor (for admin, show both participants)
       const isClient = order.clientId === userId
-      const interlocutorId = isClient ? order.executorId : order.clientId
+      const interlocutorId = isAdmin
+        ? (order.clientId === userId ? order.executorId : order.clientId) || order.clientId || order.executorId
+        : (isClient ? order.executorId : order.clientId)
 
       let interlocutor = { id: interlocutorId || '', name: 'Неизвестен', avatar: undefined as string | undefined, lastSeenAt: undefined as string | undefined }
       if (interlocutorId) {
@@ -101,19 +107,23 @@ export async function GET(req: NextRequest) {
     }
 
     // ─── 2. Direct conversations ───
-    const convs = await db.select({
-      id: conversations.id,
-      user1Id: conversations.user1Id,
-      user2Id: conversations.user2Id,
-      updatedAt: conversations.updatedAt,
-    })
-    .from(conversations)
-    .where(or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId)))
-    .orderBy(desc(conversations.updatedAt))
+    const convs = isAdmin
+      ? await db.select({
+          id: conversations.id, user1Id: conversations.user1Id, user2Id: conversations.user2Id,
+          updatedAt: conversations.updatedAt,
+        }).from(conversations).orderBy(desc(conversations.updatedAt))
+      : await db.select({
+          id: conversations.id, user1Id: conversations.user1Id, user2Id: conversations.user2Id,
+          updatedAt: conversations.updatedAt,
+        }).from(conversations)
+        .where(or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId)))
+        .orderBy(desc(conversations.updatedAt))
 
     const directChats = []
     for (const conv of convs) {
-      const peerId = conv.user1Id === userId ? conv.user2Id : conv.user1Id
+      const peerId = isAdmin
+        ? (conv.user1Id === userId ? conv.user2Id : conv.user1Id) || conv.user1Id || conv.user2Id
+        : (conv.user1Id === userId ? conv.user2Id : conv.user1Id)
 
       const [peer, lastMsg] = await Promise.all([
         db.select({ id: users.id, name: users.name, avatar: users.avatar, lastSeenAt: users.lastSeenAt }).from(users).where(eq(users.id, peerId)).limit(1),

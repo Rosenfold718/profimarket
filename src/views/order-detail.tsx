@@ -106,7 +106,7 @@ export function OrderDetailView() {
   const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null)
   const [deletingMsg, setDeletingMsg] = useState(false)
   const [chatInput, setChatInput] = useState('')
-  const [tab, setTab] = useState<'info' | 'responses' | 'chat'>((selectedOrderTab as 'info' | 'responses' | 'chat') || 'info')
+  const [tab, setTab] = useState<'info' | 'responses' | 'docs' | 'chat'>((selectedOrderTab as 'info' | 'responses' | 'docs' | 'chat') || 'info')
   const [showResponseForm, setShowResponseForm] = useState(false)
   const [responseText, setResponseText] = useState('')
   const [responseBudget, setResponseBudget] = useState('')
@@ -434,7 +434,7 @@ export function OrderDetailView() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-muted rounded-lg mb-5 overflow-x-auto">
-        {(['info', 'responses', 'chat'] as const).map((t) => (
+        {(['info', 'responses', 'docs', 'chat'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -442,7 +442,7 @@ export function OrderDetailView() {
               tab === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            {t === 'info' ? 'Описание' : t === 'responses' ? `Отклики (${order.responses.length})` : `Чат (${messages.length})`}
+            {t === 'info' ? 'Описание' : t === 'responses' ? `Отклики (${order.responses.length})` : t === 'docs' ? `Документы (${messages.filter(m => m.attachmentUrl).length})` : `Чат (${messages.length})`}
           </button>
         ))}
       </div>
@@ -581,6 +581,50 @@ export function OrderDetailView() {
                       </Card>
                     </motion.div>
                   ))
+                )}
+              </motion.div>
+            )}
+
+            {/* ─── Docs tab ────────────────────────────────────────────────── */}
+            {tab === 'docs' && (
+              <motion.div key="docs" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
+                {messages.filter(m => m.attachmentUrl).length === 0 ? (
+                  <div className="text-center py-16 text-muted-foreground">
+                    <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">Документов пока нет</p>
+                    <p className="text-xs mt-1">Прикрепите файл в чате заказа — он появится здесь</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {messages.filter(m => m.attachmentUrl).map((m) => (
+                      <Card key={m.id} className="border bg-card">
+                        <CardContent className="p-4 flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                            {m.attachmentType?.startsWith('image/') ? (
+                              <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                            ) : (
+                              <FileText className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{m.attachmentName || 'Документ'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {m.sender.name} · {m.attachmentSize ? formatFileSize(m.attachmentSize) : ''} · {new Date(m.createdAt).toLocaleDateString('ru-RU')}
+                            </p>
+                          </div>
+                          <a
+                            href={m.attachmentUrl}
+                            download={m.attachmentName || undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 rounded-lg hover:bg-muted transition-colors shrink-0"
+                          >
+                            <Download className="w-4 h-4 text-muted-foreground" />
+                          </a>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
               </motion.div>
             )}

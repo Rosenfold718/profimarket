@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { motion } from 'framer-motion'
-import { ClipboardList, Star, CheckCircle2 } from 'lucide-react'
+import { ClipboardList, Clock, CheckCircle2, XCircle } from 'lucide-react'
 
 export function MyResponsesView() {
   const { user, navigateToOrder, addToast } = useAppStore()
@@ -34,9 +34,15 @@ export function MyResponsesView() {
       .finally(() => setLoading(false))
   }, [user])
 
+  const statusIcon = (s: string) =>
+    s === 'ACCEPTED' ? <CheckCircle2 className="w-3.5 h-3.5" /> :
+    s === 'REJECTED' ? <XCircle className="w-3.5 h-3.5" /> :
+    <Clock className="w-3.5 h-3.5" />
+
   const statusColor = (s: string) =>
     s === 'ACCEPTED' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' :
-    s === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-muted text-muted-foreground'
+    s === 'REJECTED' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' :
+    'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800'
 
   const statusLabel: Record<string, string> = { PENDING: 'На рассмотрении', ACCEPTED: 'Принят', REJECTED: 'Отклонён' }
 
@@ -64,7 +70,7 @@ export function MyResponsesView() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1.5">
-                        <Badge className={statusColor(r.status)}>{statusLabel[r.status]}</Badge>
+                        <Badge className={`${statusColor(r.status)} gap-1.5`}>{statusIcon(r.status)} {statusLabel[r.status]}</Badge>
                       </div>
                       <h3 className="font-semibold text-sm truncate">{r.order.title}</h3>
                       <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{r.message}</p>
