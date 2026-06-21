@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2, PlusCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, PlusCircle, Upload, X, FileText, Image as ImageIcon } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface Category {
@@ -19,7 +19,7 @@ interface Category {
 export function CreateOrderView() {
   const { setView, addToast, navigateToOrder } = useAppStore()
   const [categories, setCategories] = useState<Category[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
   const [form, setForm] = useState({
@@ -33,6 +33,10 @@ export function CreateOrderView() {
     deadline: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Document upload state
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetch('/api/categories')
@@ -58,6 +62,21 @@ export function CreateOrderView() {
     }
     setErrors(e)
     return Object.keys(e).length === 0
+  }
+
+  const onFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    const oversized = files.filter(f => f.size > 10 * 1024 * 1024)
+    if (oversized.length > 0) {
+      addToast(`${oversized.length} файл(ов) превышают 10 МБ и были пропущены`, 'error')
+    }
+    const valid = files.filter(f => f.size <= 10 * 1024 * 1024)
+    setPendingFiles(prev => [...prev, ...valid])
+    e.target.value = ''
+  }
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index))
   }
 
   const handleSubmit = async () => {
@@ -88,9 +107,32 @@ export function CreateOrderView() {
         return
       }
 
-      addToast('Заказ успешно создан!', 'success')
-      if (data.order?.id) {
-        navigateToOrder(data.order.id, 'info')
+      const orderId = data.order?.id
+      if (orderId && pendingFiles.length > 0) {
+        // Upload documents one by one
+        let uploaded = 0
+        for (const file of pendingFiles) {
+          try {
+            const formData = new FormData()
+            formData.append('file', file)
+            const docRes = await authFetch(`/api/orders/${orderId}/documents`, {
+              method: 'POST',
+              body: formData,
+            })
+            if (docRes.ok) uploaded++
+          } catch { /* skip failed uploads */ }
+        }
+        if (uploaded > 0) {
+          addToast(`Заказ создан! Загружено ${uploaded} из ${pendingFiles.length} документов`, 'success')
+        } else {
+          addToast('Заказ создан, но документы не загрузились. Попробуйте позже.', 'info')
+        }
+      } else {
+        addToast('Заказ успешно создан!', 'success')
+      }
+
+      if (orderId) {
+        navigateToOrder(orderId, 'docs')
       } else {
         setView('my-orders')
       }
@@ -225,6 +267,55 @@ export function CreateOrderView() {
               )}
               {!form.budgetFrom && !form.budgetTo && (
                 <p className="text-xs text-muted-foreground">Оставьте пустым для «По договорённости»</p>
+              )}
+            </div>
+
+            {/* Documents upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Документы</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
+                onChange={onFilesChange}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                Прикрепить файлы
+              </Button>
+              <p className="text-xs text-muted-foreground">Макс. 10 МБ каждый · можно выбрать несколько</p>
+
+              {pendingFiles.length > 0 && (
+                <div className="space-y-2 mt-3">
+                  {pendingFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2.5 px-3 py-2 bg-muted rounded-lg text-sm">
+                      {f.type.startsWith('image/') ? (
+                        <ImageIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                      )}
+                      <span className="flex-1 truncate">{f.name}</span>
+                      <span className="text-muted-foreground text-xs shrink-0">
+                        {f.size < 1024 ? `${f.size} Б` : f.size < 1024 * 1024 ? `${(f.size / 1024).toFixed(0)} КБ` : `${(f.size / (1024 * 1024)).toFixed(1)} МБ`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePendingFile(i)}
+                        className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors shrink-0"
+                        aria-label="Удалить файл"
+                      >
+                        <X className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </CardContent>

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '@/stores/use-app-store'
 import { authFetch } from '@/lib/fetch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,9 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  MapPin, Clock, MessageSquare, ArrowLeft, Send, Star,
-  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig, Trash2, Paperclip,
-  FileText, Download, X, Check, CheckCheck, Image as ImageIcon, Zap,
+  MapPin, Clock, ArrowLeft, Star,
+  Briefcase, CheckCircle2, XCircle, Loader2, CircleCheckBig,
+  FileText, Download, Upload, Trash2, X, Image as ImageIcon, Zap,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -43,10 +43,9 @@ interface OrderResponse {
   executor: { id: string; name: string; role: string; avatar?: string; profile?: Record<string, unknown> | null }
 }
 
-interface Message {
-  id: string; content: string; senderId: string; read: boolean; createdAt: string
-  attachmentUrl?: string; attachmentName?: string; attachmentType?: string; attachmentSize?: number
-  sender: { id: string; name: string; role: string; avatar?: string }
+interface OrderDocument {
+  id: string; name: string; type: string; size: number; createdAt: string
+  uploadedById: string; uploaderName?: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,16 +53,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
-}
-
-function isImageType(mimeType?: string): boolean {
-  if (!mimeType) return false
-  return mimeType.startsWith('image/')
-}
-
-function isUserOnline(lastSeenAt?: string): boolean {
-  if (!lastSeenAt) return false
-  return Date.now() - new Date(lastSeenAt).getTime() < 60_000
 }
 
 const statusColor: Record<string, string> = {
@@ -76,138 +65,53 @@ const statusColor: Record<string, string> = {
 const statusLabel: Record<string, string> = { OPEN: 'Открыт', IN_PROGRESS: 'В работе', COMPLETED: 'Выполнен', CANCELLED: 'Отменён' }
 const responseStatusLabel: Record<string, string> = { PENDING: 'На рассмотрении', ACCEPTED: 'Принят', REJECTED: 'Отклонён' }
 
-// ─── Read receipt checkmarks ──────────────────────────────────────────────────
-function ReadCheck({ read }: { read: boolean }) {
-  if (read) {
-    return <CheckCheck className="w-3.5 h-3.5 text-sky-500" />
-  }
-  return <Check className="w-3.5 h-3.5 text-muted-foreground/70" />
-}
-
-// ─── Online dot ───────────────────────────────────────────────────────────────
-function OnlineDot({ lastSeenAt }: { lastSeenAt?: string }) {
-  const [online, setOnline] = useState(isUserOnline(lastSeenAt))
-  useEffect(() => {
-    const timer = setInterval(() => setOnline(isUserOnline(lastSeenAt)), 15_000)
-    return () => clearInterval(timer)
-  }, [lastSeenAt])
-  return (
-    <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${online ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`} title={online ? 'В сети' : 'Не в сети'} />
-  )
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function OrderDetailView() {
-  const { selectedOrderId, selectedOrderTab, user, setView, navigateToProfile, addToast, setUnreadChats } = useAppStore()
+  const { selectedOrderId, selectedOrderTab, user, setView, navigateToProfile, addToast } = useAppStore()
   const [order, setOrder] = useState<Order | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
+  const [documents, setDocuments] = useState<OrderDocument[]>([])
   const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [deleteMsgId, setDeleteMsgId] = useState<string | null>(null)
-  const [deletingMsg, setDeletingMsg] = useState(false)
-  const [chatInput, setChatInput] = useState('')
-  const [tab, setTab] = useState<'info' | 'responses' | 'docs' | 'chat'>((selectedOrderTab as 'info' | 'responses' | 'docs' | 'chat') || 'info')
+  const [tab, setTab] = useState<'info' | 'responses' | 'docs'>((selectedOrderTab as 'info' | 'responses' | 'docs') || 'info')
   const [showResponseForm, setShowResponseForm] = useState(false)
   const [responseText, setResponseText] = useState('')
   const [responseBudget, setResponseBudget] = useState('')
   const [responding, setResponding] = useState(false)
-  const [attachedFile, setAttachedFile] = useState<File | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const wasAtBottomRef = useRef(true)
-  const messagesRef = useRef<Message[]>([])
 
-  // Sync ref synchronously
-  const updateMessages = useCallback((updater: Message[] | ((prev: Message[]) => Message[])) => {
-    setMessages(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater
-      messagesRef.current = next
-      return next
-    })
-  }, [])
-
-  const scrollToBottom = (smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' })
-  }
-
-  // Track scroll position
-  useEffect(() => {
-    if (tab !== 'chat') return
-    const container = messagesEndRef.current?.parentElement
-    if (!container) return
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container
-      wasAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 60
-    }
-    container.addEventListener('scroll', handleScroll, { passive: true })
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [tab, loading])
-
-  // Scroll on new messages
-  useEffect(() => { scrollToBottom() }, [messages.length])
-
-  // Poll for new messages
-  useEffect(() => {
-    if (tab !== 'chat' || !selectedOrderId || loading) return
-    const timer = setInterval(async () => {
-      const currentMsgs = messagesRef.current
-      if (currentMsgs.length === 0) return
-      const newestTime = currentMsgs[currentMsgs.length - 1]?.createdAt
-      if (!newestTime) return
-      try {
-        const res = await authFetch(`/api/orders/${selectedOrderId}/messages?since=${encodeURIComponent(newestTime)}`)
-        const data = await res.json()
-        const newMsgs: Message[] = data.messages || []
-        if (newMsgs.length > 0) {
-          const existingIds = new Set(messagesRef.current.map(m => m.id))
-          const fresh = newMsgs.filter(m => !existingIds.has(m.id))
-          if (fresh.length > 0) {
-            updateMessages(prev => {
-              const merged = [...prev, ...fresh].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-              messagesRef.current = merged
-              return merged
-            })
-            if (wasAtBottomRef.current) setTimeout(() => scrollToBottom(), 50)
-          }
-        }
-      } catch { /* silent */ }
-    }, 2000)
-    return () => clearInterval(timer)
-  }, [tab, selectedOrderId, loading, updateMessages])
+  // Document upload state
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [deleteDocId, setDeleteDocId] = useState<string | null>(null)
+  const [deletingDoc, setDeletingDoc] = useState(false)
+  const docInputRef = useRef<HTMLInputElement>(null)
 
   // ─── Load order ─────────────────────────────────────────────────────────────
-  const loadOrder = useCallback(async () => {
+  const loadOrder = async () => {
     if (!selectedOrderId) return
     setLoading(true)
     try {
-      const [orderRes, msgRes] = await Promise.all([
-        fetch(`/api/orders/${selectedOrderId}`),
-        authFetch(`/api/orders/${selectedOrderId}/messages`),
-      ])
-      const orderData = await orderRes.json()
-      setOrder(orderData.order)
-      const msgData = await msgRes.json()
-      const msgs: Message[] = msgData.messages || []
-      updateMessages(msgs)
-
-      // Mark unread messages from others as read
-      const unreadFromOthers = msgs.filter(m => !m.read && m.senderId !== user?.id).length
-      if (unreadFromOthers > 0) {
-        authFetch(`/api/orders/${selectedOrderId}/messages`, { method: 'PATCH' })
-          .then(() => setUnreadChats(Math.max(0, useAppStore.getState().unreadChats - unreadFromOthers)))
-          .catch(() => {})
-      }
+      const res = await fetch(`/api/orders/${selectedOrderId}`)
+      const data = await res.json()
+      setOrder(data.order)
+      // Load documents
+      loadDocuments(selectedOrderId)
     } catch {
       addToast('Ошибка загрузки', 'error')
     } finally {
       setLoading(false)
     }
-  }, [selectedOrderId, updateMessages, setUnreadChats, user?.id, addToast])
+  }
 
-  useEffect(() => { loadOrder() }, [loadOrder])
+  const loadDocuments = async (orderId: string) => {
+    try {
+      const res = await authFetch(`/api/orders/${orderId}/documents`)
+      const data = await res.json()
+      setDocuments(data.documents || [])
+    } catch { /* silent */ }
+  }
 
-  // ─── File handling ──────────────────────────────────────────────────────────
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => { loadOrder() }, [selectedOrderId])
+
+  // ─── Upload document ────────────────────────────────────────────────────────
+  const onDocFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
@@ -215,76 +119,53 @@ export function OrderDetailView() {
         e.target.value = ''
         return
       }
-      setAttachedFile(file)
+      uploadDocument(file)
+      e.target.value = ''
     }
   }
 
-  const removeFile = () => {
-    setAttachedFile(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  // ─── Send message ───────────────────────────────────────────────────────────
-  const sendMessage = async () => {
-    if ((!chatInput.trim() && !attachedFile) || !selectedOrderId) return
-    setSending(true)
+  const uploadDocument = async (file: File) => {
+    if (!selectedOrderId) return
+    setUploadingDoc(true)
     try {
-      let res: Response
-      if (attachedFile) {
-        const formData = new FormData()
-        if (chatInput.trim()) formData.append('content', chatInput.trim())
-        formData.append('file', attachedFile)
-        res = await authFetch(`/api/orders/${selectedOrderId}/messages`, {
-          method: 'POST',
-          body: formData,
-        })
-      } else {
-        res = await authFetch(`/api/orders/${selectedOrderId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ content: chatInput.trim() }),
-        })
-      }
-
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await authFetch(`/api/orders/${selectedOrderId}/documents`, {
+        method: 'POST',
+        body: formData,
+      })
       if (!res.ok) {
-        try { const d = await res.json(); addToast(d.error || 'Ошибка отправки', 'error') }
-        catch { addToast('Ошибка отправки', 'error') }
+        const d = await res.json()
+        addToast(d.error || 'Ошибка загрузки', 'error')
       } else {
-        const data = await res.json()
-        if (data.message) {
-          updateMessages(prev => {
-            if (prev.some(m => m.id === data.message.id)) return prev
-            const merged = [...prev, data.message].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-            messagesRef.current = merged
-            return merged
-          })
-        }
-        setChatInput('')
-        removeFile()
+        addToast('Документ загружен', 'success')
+        loadDocuments(selectedOrderId)
       }
     } catch {
-      addToast('Ошибка отправки', 'error')
+      addToast('Ошибка загрузки', 'error')
     } finally {
-      setSending(false)
+      setUploadingDoc(false)
     }
   }
 
-  // ─── Delete message ─────────────────────────────────────────────────────────
-  const deleteMessage = async (msgId: string) => {
+  // ─── Delete document ────────────────────────────────────────────────────────
+  const deleteDocument = async (docId: string) => {
     if (!selectedOrderId) return
-    setDeletingMsg(true)
+    setDeletingDoc(true)
     try {
-      const res = await authFetch(`/api/orders/${selectedOrderId}/messages/${msgId}`, { method: 'DELETE' })
+      const res = await authFetch(`/api/orders/${selectedOrderId}/documents/${docId}`, { method: 'DELETE' })
       if (res.ok) {
-        updateMessages(prev => prev.filter(m => m.id !== msgId))
+        setDocuments(prev => prev.filter(d => d.id !== docId))
+        addToast('Документ удалён', 'info')
       } else {
         const d = await res.json()
         addToast(d.error || 'Ошибка удаления', 'error')
       }
     } catch {
-      addToast('Ошибка сети', 'error')
+      addToast('Ошибка удаления', 'error')
     } finally {
-      setDeletingMsg(false)
-      setDeleteMsgId(null)
+      setDeletingDoc(false)
+      setDeleteDocId(null)
     }
   }
 
@@ -367,7 +248,9 @@ export function OrderDetailView() {
   const isClient = user?.id === order.client.id
   const isExecutor = user?.id === order.executor?.id
   const canRespond = !isClient && user?.role === 'EXECUTOR' && order.status === 'OPEN' && !order.responses.some(r => r.executor.id === user?.id)
-  const otherUser = isClient ? order.executor : order.client
+
+  // Who can upload docs: client always, executor if assigned, admin
+  const canUploadDocs = isClient || isExecutor || user?.role === 'ADMIN'
 
   return (
     <div className="p-4 lg:p-6 max-w-6xl mx-auto">
@@ -418,15 +301,9 @@ export function OrderDetailView() {
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Отправьте отклик, чтобы предложить свои услуги заказчику</p>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <Button onClick={() => { setTab('responses'); setShowResponseForm(true) }} size="sm" className="gap-1.5">
-                  Откликнуться
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setTab('chat')} className="gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Написать
-                </Button>
-              </div>
+              <Button onClick={() => { setTab('responses'); setShowResponseForm(true) }} size="sm" className="gap-1.5 shrink-0">
+                Откликнуться
+              </Button>
             </CardContent>
           </Card>
         </motion.div>
@@ -434,7 +311,7 @@ export function OrderDetailView() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-muted rounded-lg mb-5 overflow-x-auto">
-        {(['info', 'responses', 'docs', 'chat'] as const).map((t) => (
+        {(['info', 'responses', 'docs'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -442,7 +319,7 @@ export function OrderDetailView() {
               tab === t ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            {t === 'info' ? 'Описание' : t === 'responses' ? `Отклики (${order.responses.length})` : t === 'docs' ? `Документы (${messages.filter(m => m.attachmentUrl).length})` : `Чат (${messages.length})`}
+            {t === 'info' ? 'Описание' : t === 'responses' ? `Отклики (${order.responses.length})` : `Документы (${documents.length})`}
           </button>
         ))}
       </div>
@@ -474,10 +351,6 @@ export function OrderDetailView() {
                         </div>
                       )}
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <MessageSquare className="w-4 h-4 shrink-0" />
-                        <span>{order.responses.length} откликов</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-muted-foreground">
                         <Briefcase className="w-4 h-4 shrink-0" />
                         <span>Создан {new Date(order.createdAt).toLocaleDateString('ru-RU')}</span>
                       </div>
@@ -493,16 +366,10 @@ export function OrderDetailView() {
                 {canRespond && (
                   <div className="mb-3">
                     {!showResponseForm ? (
-                      <div className="flex gap-2">
-                        <Button onClick={() => setShowResponseForm(true)} size="sm" className="gap-2">
-                          <Zap className="w-3.5 h-3.5" />
-                          Откликнуться на заказ
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => setTab('chat')} className="gap-2">
-                          <MessageSquare className="w-3.5 h-3.5" />
-                          Написать заказчику
-                        </Button>
-                      </div>
+                      <Button onClick={() => setShowResponseForm(true)} size="sm" className="gap-2">
+                        <Zap className="w-3.5 h-3.5" />
+                        Откликнуться на заказ
+                      </Button>
                     ) : (
                       <Card className="border-accent/30 bg-card">
                         <CardContent className="p-5 space-y-3">
@@ -523,7 +390,7 @@ export function OrderDetailView() {
                 )}
                 {order.responses.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <Zap className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="text-sm">Пока нет откликов</p>
                   </div>
                 ) : (
@@ -588,39 +455,77 @@ export function OrderDetailView() {
             {/* ─── Docs tab ────────────────────────────────────────────────── */}
             {tab === 'docs' && (
               <motion.div key="docs" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-3">
-                {messages.filter(m => m.attachmentUrl).length === 0 ? (
+                {/* Upload button */}
+                {canUploadDocs && (
+                  <div>
+                    <input
+                      ref={docInputRef}
+                      type="file"
+                      accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
+                      onChange={onDocFileChange}
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => docInputRef.current?.click()}
+                      disabled={uploadingDoc}
+                      className="gap-2"
+                    >
+                      {uploadingDoc ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4" />
+                      )}
+                      {uploadingDoc ? 'Загрузка...' : 'Загрузить документ'}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1.5">Макс. 10 МБ · PDF, DOC, XLS, изображения, архивы</p>
+                  </div>
+                )}
+
+                {/* Documents list */}
+                {documents.length === 0 ? (
                   <div className="text-center py-16 text-muted-foreground">
                     <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="text-sm">Документов пока нет</p>
-                    <p className="text-xs mt-1">Прикрепите файл в чате заказа — он появится здесь</p>
+                    {canUploadDocs && <p className="text-xs mt-1">Нажмите «Загрузить документ» выше</p>}
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {messages.filter(m => m.attachmentUrl).map((m) => (
-                      <Card key={m.id} className="border bg-card">
+                    {documents.map((doc) => (
+                      <Card key={doc.id} className="border bg-card group">
                         <CardContent className="p-4 flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                            {m.attachmentType?.startsWith('image/') ? (
+                            {doc.type?.startsWith('image/') ? (
                               <ImageIcon className="w-5 h-5 text-muted-foreground" />
                             ) : (
                               <FileText className="w-5 h-5 text-muted-foreground" />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{m.attachmentName || 'Документ'}</p>
+                            <p className="text-sm font-medium truncate">{doc.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {m.sender.name} · {m.attachmentSize ? formatFileSize(m.attachmentSize) : ''} · {new Date(m.createdAt).toLocaleDateString('ru-RU')}
+                              {doc.uploaderName || 'Пользователь'} · {formatFileSize(doc.size)} · {new Date(doc.createdAt).toLocaleDateString('ru-RU')}
                             </p>
                           </div>
                           <a
-                            href={m.attachmentUrl}
-                            download={m.attachmentName || undefined}
+                            href={`/api/orders/${selectedOrderId}/documents?download=${doc.id}`}
+                            download={doc.name}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-2 rounded-lg hover:bg-muted transition-colors shrink-0"
+                            title="Скачать"
                           >
                             <Download className="w-4 h-4 text-muted-foreground" />
                           </a>
+                          {(doc.uploadedById === user?.id || user?.role === 'ADMIN') && (
+                            <button
+                              onClick={() => setDeleteDocId(doc.id)}
+                              className="p-2 rounded-lg hover:bg-destructive/10 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                              title="Удалить"
+                            >
+                              <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                            </button>
+                          )}
                         </CardContent>
                       </Card>
                     ))}
@@ -628,179 +533,27 @@ export function OrderDetailView() {
                 )}
               </motion.div>
             )}
-
-            {/* ─── Chat tab ──────────────────────────────────────────────────── */}
-            {tab === 'chat' && (
-              <motion.div key="chat" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <Card className="border bg-card">
-                  <CardContent className="p-0 flex flex-col" style={{ height: 'min(500px, calc(100dvh - 340px))' }}>
-                    {/* Messages */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-                      {messages.length === 0 ? (
-                        <div className="text-center py-16 text-muted-foreground">
-                          <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                          <p className="text-sm">Начните переписку по заказу</p>
-                        </div>
-                      ) : (
-                        messages.map((msg) => {
-                          const isMine = msg.sender.id === user?.id
-                          return (
-                            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[75%] ${isMine ? 'order-2' : ''}`}>
-                                <div className={`flex items-center gap-1.5 ${isMine ? 'justify-end' : ''}`}>
-                                  {!isMine && (
-                                    <span className="text-xs font-medium text-muted-foreground">{msg.sender.name}</span>
-                                  )}
-                                </div>
-                                <div className={`relative group rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                                  isMine
-                                    ? 'bg-primary text-primary-foreground rounded-br-sm'
-                                    : 'bg-muted rounded-bl-sm'
-                                }`}>
-                                  {/* Image attachment */}
-                                  {msg.attachmentUrl && isImageType(msg.attachmentType) && (
-                                    <a href={msg.attachmentUrl} target="_blank" rel="noopener noreferrer" className="block mb-2 -mx-1 -mt-1">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={msg.attachmentUrl}
-                                        alt={msg.attachmentName || 'Изображение'}
-                                        className="max-w-full max-h-64 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                      />
-                                    </a>
-                                  )}
-                                  {/* File attachment (non-image) */}
-                                  {msg.attachmentUrl && !isImageType(msg.attachmentType) && (
-                                    <a
-                                      href={msg.attachmentUrl}
-                                      download={msg.attachmentName}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={`flex items-center gap-2.5 p-2.5 rounded-lg mb-2 transition-colors ${
-                                        isMine
-                                          ? 'bg-primary-foreground/15 hover:bg-primary-foreground/25'
-                                          : 'bg-background/60 hover:bg-background/80'
-                                      }`}
-                                    >
-                                      {msg.attachmentType?.startsWith('video') ? (
-                                        <ImageIcon className="w-5 h-5 shrink-0" />
-                                      ) : (
-                                        <FileText className="w-5 h-5 shrink-0" />
-                                      )}
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-medium truncate">{msg.attachmentName}</p>
-                                        {msg.attachmentSize != null && (
-                                          <p className="text-[11px] opacity-70">{formatFileSize(msg.attachmentSize)}</p>
-                                        )}
-                                      </div>
-                                      <Download className="w-4 h-4 shrink-0 opacity-70" />
-                                    </a>
-                                  )}
-                                  {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                                  {/* Delete button for own messages */}
-                                  {isMine && (
-                                    <button
-                                      onClick={() => setDeleteMsgId(msg.id)}
-                                      className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-background shadow-sm border text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                      aria-label="Удалить сообщение"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                </div>
-                                {/* Time + read receipt */}
-                                <div className={`flex items-center gap-1 mt-1 ${isMine ? 'flex-row-reverse' : ''}`}>
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                  {isMine && <ReadCheck read={msg.read} />}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
-                    {/* Input */}
-                    <div className="p-3 border-t border-border">
-                      {attachedFile && (
-                        <div className="mb-2">
-                          <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm">
-                            <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
-                            {attachedFile.type.startsWith('image/') && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={URL.createObjectURL(attachedFile)} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
-                            )}
-                            <span className="flex-1 truncate">{attachedFile.name}</span>
-                            <span className="text-muted-foreground text-xs">{formatFileSize(attachedFile.size)}</span>
-                            <button onClick={removeFile} className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors" aria-label="Удалить файл">
-                              <X className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex gap-2">
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar"
-                          onChange={onFileChange}
-                          className="hidden"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="shrink-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={sending}
-                          aria-label="Прикрепить файл"
-                        >
-                          <Paperclip className="w-4 h-4" />
-                        </Button>
-                        <Textarea
-                          placeholder="Введите сообщение..."
-                          value={chatInput}
-                          onChange={(e) => setChatInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                          rows={1}
-                          className="flex-1 resize-none min-h-[38px]"
-                        />
-                        <Button
-                          onClick={sendMessage}
-                          disabled={sending || (!chatInput.trim() && !attachedFile)}
-                          size="icon"
-                          className="shrink-0"
-                        >
-                          <Send className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-
-            {/* Delete message confirmation */}
-            <AlertDialog open={!!deleteMsgId} onOpenChange={(open) => !open && setDeleteMsgId(null)}>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Удалить сообщение?</AlertDialogTitle>
-                  <AlertDialogDescription>Сообщение будет удалено безвозвратно.</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={deletingMsg}>Отмена</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => deleteMsgId && deleteMessage(deleteMsgId)}
-                    disabled={deletingMsg}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    {deletingMsg ? 'Удаление...' : 'Удалить'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </AnimatePresence>
+
+          {/* Delete document confirmation */}
+          <AlertDialog open={!!deleteDocId} onOpenChange={(open) => !open && setDeleteDocId(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Удалить документ?</AlertDialogTitle>
+                <AlertDialogDescription>Документ будет удалён безвозвратно.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deletingDoc}>Отмена</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => deleteDocId && deleteDocument(deleteDocId)}
+                  disabled={deletingDoc}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {deletingDoc ? 'Удаление...' : 'Удалить'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         {/* ─── Sidebar ────────────────────────────────────────────────────── */}
@@ -814,35 +567,26 @@ export function OrderDetailView() {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="flex items-center gap-3">
-                <div className="relative">
-                  <button
-                    onClick={() => navigateToProfile(otherUser?.id || '')}
-                    className="w-11 h-11 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg overflow-hidden"
-                  >
-                    {otherUser?.avatar ? (
-                      <img src={otherUser.avatar} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      otherUser?.name?.charAt(0) || '?'
-                    )}
-                  </button>
-                  <OnlineDot lastSeenAt={otherUser?.lastSeenAt} />
-                </div>
+                <button
+                  onClick={() => navigateToProfile((isClient ? order.executor : order.client)?.id || '')}
+                  className="w-11 h-11 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg overflow-hidden"
+                >
+                  {(isClient ? order.executor : order.client)?.avatar ? (
+                    <img src={(isClient ? order.executor : order.client)!.avatar!} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (isClient ? order.executor : order.client)?.name?.charAt(0) || '?'
+                  )}
+                </button>
                 <div className="flex-1 min-w-0">
-                  <button onClick={() => navigateToProfile(otherUser?.id || '')} className="font-medium text-sm hover:underline truncate block">
-                    {otherUser?.name || 'Не назначен'}
+                  <button onClick={() => navigateToProfile((isClient ? order.executor : order.client)?.id || '')} className="font-medium text-sm hover:underline truncate block">
+                    {(isClient ? order.executor : order.client)?.name || 'Не назначен'}
                   </button>
                   <p className="text-xs text-muted-foreground">
                     {isClient
-                      ? (otherUser ? `${isUserOnline(otherUser.lastSeenAt) ? 'В сети' : 'Не в сети'}` : 'Не выбран')
+                      ? (order.executor ? 'Исполнитель' : 'Не выбран')
                       : order.client.role === 'CLIENT' ? 'Заказчик' : 'Организация'}
                   </p>
                 </div>
-                {otherUser && (
-                  <Button variant="outline" size="sm" onClick={() => setTab('chat')} className="shrink-0 gap-1.5 text-xs">
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    Чат
-                  </Button>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -864,7 +608,7 @@ export function OrderDetailView() {
                 </div>
               )}
               <div className="flex items-center gap-2 text-muted-foreground">
-                <MessageSquare className="w-4 h-4 shrink-0" />{order.responses.length} откликов
+                <FileText className="w-4 h-4 shrink-0" />{documents.length} документов
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Briefcase className="w-4 h-4 shrink-0" />Создан {new Date(order.createdAt).toLocaleDateString('ru-RU')}

@@ -87,6 +87,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   category: one(categories, { fields: [orders.categoryId], references: [categories.id] }),
   responses: many(responses),
   messages: many(messages),
+  documents: many(orderDocuments),
 }))
 
 // ─── Response ────────────────────────────────────────────────────────────────
@@ -104,6 +105,23 @@ export const responses = sqliteTable('Response', {
 export const responsesRelations = relations(responses, ({ one }) => ({
   order: one(orders, { fields: [responses.orderId], references: [orders.id] }),
   executor: one(users, { fields: [responses.executorId], references: [users.id], relationName: 'executorResponses' }),
+}))
+
+// ─── Order Document ─────────────────────────────────────────────────────────
+export const orderDocuments = sqliteTable('OrderDocument', {
+  id: text('id').primaryKey(),
+  orderId: text('orderId').notNull(),
+  uploadedById: text('uploadedById').notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  size: integer('size').notNull(),
+  dataUrl: text('dataUrl').notNull(),
+  createdAt: text('createdAt').notNull().default(sql`CURRENT_TIMESTAMP`),
+})
+
+export const orderDocumentsRelations = relations(orderDocuments, ({ one }) => ({
+  order: one(orders, { fields: [orderDocuments.orderId], references: [orders.id] }),
+  uploadedBy: one(users, { fields: [orderDocuments.uploadedById], references: [users.id] }),
 }))
 
 // ─── Message ────────────────────────────────────────────────────────────────
